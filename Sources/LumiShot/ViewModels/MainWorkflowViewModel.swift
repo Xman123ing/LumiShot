@@ -53,6 +53,11 @@ public final class MainWorkflowViewModel: ObservableObject {
         diagnostics.extractionStatus = "success:\(output.path)"
     }
 
+    public func applyOCRText(_ text: String, path: ExtractionPath = .imageOCR) {
+        extractedText = ExtractedTextDocument(content: text, path: path)
+        diagnostics.extractionStatus = "success:\(path)"
+    }
+
     public func exportCurrent() throws -> ExportURLs {
         let text = extractedText?.content ?? ""
         let baseImage = currentCapture?.image ?? Self.makeFallbackImage()

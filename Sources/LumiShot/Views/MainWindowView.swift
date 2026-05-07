@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 public struct MainWindowView: View {
     @StateObject private var viewModel = MainWorkflowViewModel.live()
-    @State private var actionMessage = "Ready"
+    @State private var toastMessage: String?
+    @State private var toastDismissToken = 0
     @State private var selectedMode: CaptureMode = .fullScreen
     @State private var regionX = "100"
     @State private var regionY = "100"
@@ -24,145 +26,74 @@ public struct MainWindowView: View {
             )
             .ignoresSafeArea()
 
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("LUMISHOT")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text("Capture")
-                    Text("Extract")
-                    Text("Export")
-                    Spacer()
-                }
-                .padding(16)
-                .frame(width: StyleTokens.sidebarWidth)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
-                .background(.black.opacity(0.22))
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("LumiShot V1")
-                        .font(.system(size: 20, weight: .bold))
-                    Text("Capture -> Annotate -> Extract -> Export")
-                        .foregroundStyle(.white.opacity(0.72))
-                    Text("Session: \(viewModel.diagnostics.sessionID.prefix(8))")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text("Capture: \(viewModel.diagnostics.captureStatus)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text("Extract: \(viewModel.diagnostics.extractionStatus)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text("Export: \(viewModel.diagnostics.exportStatus)")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.62))
-                    Text(actionMessage)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.cyan.opacity(0.9))
-
-                    HStack(spacing: 10) {
-                        Picker("Mode", selection: $selectedMode) {
-                            ForEach(CaptureMode.allCases, id: \.self) { mode in
-                                Text(modeLabel(mode)).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 180)
-
-                        Button("Capture") {
-                            Task {
-                                do {
-                                    try await viewModel.runCapture(
-                                        mode: selectedMode,
-                                        region: regionRectForSelection()
-                                    )
-                                    actionMessage = "Capture completed."
-                                } catch {
-                                    actionMessage = "Capture failed: \(error.localizedDescription)"
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Extract OCR") {
-                            Task {
-                                do {
-                                    try await viewModel.extractTextFromCurrentAsset()
-                                    actionMessage = "OCR completed."
-                                } catch {
-                                    actionMessage = "OCR failed: \(error.localizedDescription)"
-                                }
-                            }
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Export") {
+            VStack(spacing: 0) {
+                TopToolbarView(
+                    selectedMode: $selectedMode,
+                    zoomText: "100%",
+                    onCapture: {
+                        Task {
                             do {
-                                let urls = try viewModel.exportCurrent()
-                                actionMessage = "Exported: \(urls.png.lastPathComponent)"
+                                try await viewModel.runCapture(
+                                    mode: selectedMode,
+                                    region: regionRectForSelection()
+                                )
+                                showToast("Capture completed.")
                             } catch {
-                                actionMessage = "Export failed: \(error.localizedDescription)"
+                                showToast("Capture failed: \(error.localizedDescription)")
                             }
                         }
-                        .buttonStyle(.bordered)
+                    },
+                    onCopy: copyCurrentCaptureImage,
+                    onSave: saveCurrentCaptureImage,
+                    onAddBox: {
+                        viewModel.addBoxAnnotation()
+                        showToast("Rectangle added.")
+                    },
+                    onAddArrow: {
+                        viewModel.addArrowAnnotation()
+                        showToast("Arrow added.")
+                    },
+                    onAddText: {
+                        viewModel.addTextAnnotation("Text")
+                        showToast("Text added.")
+                    },
+                    onAddNumber: {
+                        viewModel.addNumberAnnotation()
+                        showToast("Counter added.")
+                    },
+                    onBackdrop: {
+                        showToast("Backdrop style selected.")
+                    },
+                    onFloatingPin: {
+                        viewModel.addTextAnnotation("Pin")
+                        showToast("Floating pin added.")
                     }
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.28))
 
+                if selectedMode == .region {
                     HStack(spacing: 8) {
-                        Button("Text") {
-                            viewModel.addTextAnnotation("Text")
-                            actionMessage = "Added text annotation."
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Box") {
-                            viewModel.addBoxAnnotation()
-                            actionMessage = "Added box annotation."
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Arrow") {
-                            viewModel.addArrowAnnotation()
-                            actionMessage = "Added arrow annotation."
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Number") {
-                            viewModel.addNumberAnnotation()
-                            actionMessage = "Added number annotation."
-                        }
-                        .buttonStyle(.bordered)
+                        Text("Region")
+                            .foregroundStyle(.white.opacity(0.72))
+                        regionField("x", value: $regionX)
+                        regionField("y", value: $regionY)
+                        regionField("w", value: $regionWidth)
+                        regionField("h", value: $regionHeight)
+                        Spacer()
                     }
-
-                    if selectedMode == .region {
-                        HStack(spacing: 8) {
-                            Text("Region")
-                                .foregroundStyle(.white.opacity(0.72))
-                            regionField("x", value: $regionX)
-                            regionField("y", value: $regionY)
-                            regionField("w", value: $regionWidth)
-                            regionField("h", value: $regionHeight)
-                        }
-                    }
-
-                    if let text = viewModel.extractedText?.content, !text.isEmpty {
-                        Text(text)
-                            .font(.system(size: 12))
-                            .lineLimit(8)
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
-                    }
-
-                    if !viewModel.annotationStore.items.isEmpty {
-                        AnnotationCanvasView(items: viewModel.annotationStore.items)
-                            .frame(height: 180)
-                            .frame(maxWidth: .infinity)
-                            .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    Spacer()
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.black.opacity(0.18))
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                CanvasWorkspaceView(
+                    items: viewModel.annotationStore.items,
+                    hasCapture: viewModel.currentCapture != nil,
+                    captureImage: viewModel.currentCapture?.image
+                )
+                    .padding(16)
             }
             .foregroundStyle(.white)
             .background(.black.opacity(0.22))
@@ -172,22 +103,17 @@ public struct MainWindowView: View {
                     .stroke(.white.opacity(0.12), lineWidth: 1)
             }
             .padding(14)
+
+            ToastBannerView(message: $toastMessage, dismissToken: toastDismissToken)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.didExtractOCRText)) { notification in
+            if let text = notification.userInfo?[LumiShotNotifications.extractedTextKey] as? String {
+                viewModel.applyOCRText(text)
+                showToast("OCR applied (\(text.count) chars).")
+            }
         }
         .preferredColorScheme(.dark)
         .fontDesign(.rounded)
-    }
-
-    private func modeLabel(_ mode: CaptureMode) -> String {
-        switch mode {
-        case .region:
-            return "Region"
-        case .window:
-            return "Window"
-        case .fullScreen:
-            return "Full Screen"
-        case .scrolling:
-            return "Scrolling"
-        }
     }
 
     private func regionRectForSelection() -> CGRect? {
@@ -207,5 +133,31 @@ public struct MainWindowView: View {
         TextField(label, text: value)
             .textFieldStyle(.roundedBorder)
             .frame(width: 82)
+    }
+
+    private func showToast(_ text: String) {
+        toastDismissToken += 1
+        toastMessage = text
+    }
+
+    private func copyCurrentCaptureImage() {
+        guard let image = viewModel.currentCapture?.image else {
+            showToast("Nothing to copy.")
+            return
+        }
+        let size = NSSize(width: image.width, height: image.height)
+        let nsImage = NSImage(cgImage: image, size: size)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([nsImage])
+        showToast("Copied screenshot.")
+    }
+
+    private func saveCurrentCaptureImage() {
+        do {
+            let urls = try viewModel.exportCurrent()
+            showToast("Saved: \(urls.png.lastPathComponent)")
+        } catch {
+            showToast("Save failed: \(error.localizedDescription)")
+        }
     }
 }
