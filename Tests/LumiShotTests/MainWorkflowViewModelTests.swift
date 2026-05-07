@@ -43,6 +43,39 @@ final class MainWorkflowViewModelTests: XCTestCase {
         XCTAssertEqual(sut.annotationStore.items.map(\.kind), [.text, .box, .arrow, .number])
         XCTAssertEqual(sut.annotationStore.items.first?.displayValue, "hello")
     }
+
+    @MainActor
+    func testToolbarPrimaryAnnotationActionsAddExpectedItems() {
+        let sut = MainWorkflowViewModel.mockedSuccessPath()
+
+        for tool in ToolbarTool.primaryTools {
+            switch tool {
+            case .rectangle:
+                sut.addBoxAnnotation()
+            case .arrow:
+                sut.addArrowAnnotation()
+            case .text:
+                sut.addTextAnnotation()
+            case .counter:
+                sut.addNumberAnnotation()
+            case .floatingPin, .backdrop:
+                XCTFail("Unexpected tool in ToolbarTool.primaryTools: \(tool)")
+            }
+        }
+
+        XCTAssertEqual(sut.annotationStore.items.map(\.kind), [.box, .arrow, .text, .number])
+    }
+
+    @MainActor
+    func testApplyOCRTextStoresExtractedDocumentForBackgroundOCRFlow() {
+        let sut = MainWorkflowViewModel.mockedSuccessPath()
+
+        sut.applyOCRText("piped OCR from notification")
+
+        XCTAssertEqual(sut.extractedText?.content, "piped OCR from notification")
+        XCTAssertEqual(sut.extractedText?.path, .imageOCR)
+        XCTAssertEqual(sut.diagnostics.extractionStatus, "success:imageOCR")
+    }
 }
 
 private struct CaptureServiceSpy: CaptureServicing {
