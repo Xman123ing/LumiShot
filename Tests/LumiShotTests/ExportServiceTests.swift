@@ -1,6 +1,6 @@
 import CoreGraphics
 import XCTest
-@testable import LumiShot
+@testable import LumiShotKit
 
 final class ExportServiceTests: XCTestCase {
     func testExportsPNGAndMarkdownToDisk() throws {

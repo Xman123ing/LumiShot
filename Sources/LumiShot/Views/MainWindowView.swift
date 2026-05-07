@@ -3,6 +3,11 @@ import SwiftUI
 public struct MainWindowView: View {
     @StateObject private var viewModel = MainWorkflowViewModel.live()
     @State private var actionMessage = "Ready"
+    @State private var selectedMode: CaptureMode = .fullScreen
+    @State private var regionX = "100"
+    @State private var regionY = "100"
+    @State private var regionWidth = "800"
+    @State private var regionHeight = "500"
 
     public init() {}
 
@@ -56,10 +61,21 @@ public struct MainWindowView: View {
                         .foregroundStyle(.cyan.opacity(0.9))
 
                     HStack(spacing: 10) {
-                        Button("Capture Full Screen") {
+                        Picker("Mode", selection: $selectedMode) {
+                            ForEach(CaptureMode.allCases, id: \.self) { mode in
+                                Text(modeLabel(mode)).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 180)
+
+                        Button("Capture") {
                             Task {
                                 do {
-                                    try await viewModel.runCapture(mode: .fullScreen)
+                                    try await viewModel.runCapture(
+                                        mode: selectedMode,
+                                        region: regionRectForSelection()
+                                    )
                                     actionMessage = "Capture completed."
                                 } catch {
                                     actionMessage = "Capture failed: \(error.localizedDescription)"
@@ -91,12 +107,56 @@ public struct MainWindowView: View {
                         .buttonStyle(.bordered)
                     }
 
+                    HStack(spacing: 8) {
+                        Button("Text") {
+                            viewModel.addTextAnnotation("Text")
+                            actionMessage = "Added text annotation."
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Box") {
+                            viewModel.addBoxAnnotation()
+                            actionMessage = "Added box annotation."
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Arrow") {
+                            viewModel.addArrowAnnotation()
+                            actionMessage = "Added arrow annotation."
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Number") {
+                            viewModel.addNumberAnnotation()
+                            actionMessage = "Added number annotation."
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    if selectedMode == .region {
+                        HStack(spacing: 8) {
+                            Text("Region")
+                                .foregroundStyle(.white.opacity(0.72))
+                            regionField("x", value: $regionX)
+                            regionField("y", value: $regionY)
+                            regionField("w", value: $regionWidth)
+                            regionField("h", value: $regionHeight)
+                        }
+                    }
+
                     if let text = viewModel.extractedText?.content, !text.isEmpty {
                         Text(text)
                             .font(.system(size: 12))
                             .lineLimit(8)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+                    }
+
+                    if !viewModel.annotationStore.items.isEmpty {
+                        AnnotationCanvasView(items: viewModel.annotationStore.items)
+                            .frame(height: 180)
+                            .frame(maxWidth: .infinity)
                             .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
                     }
                     Spacer()
@@ -115,5 +175,37 @@ public struct MainWindowView: View {
         }
         .preferredColorScheme(.dark)
         .fontDesign(.rounded)
+    }
+
+    private func modeLabel(_ mode: CaptureMode) -> String {
+        switch mode {
+        case .region:
+            return "Region"
+        case .window:
+            return "Window"
+        case .fullScreen:
+            return "Full Screen"
+        case .scrolling:
+            return "Scrolling"
+        }
+    }
+
+    private func regionRectForSelection() -> CGRect? {
+        guard selectedMode == .region else { return nil }
+        guard
+            let x = Double(regionX),
+            let y = Double(regionY),
+            let width = Double(regionWidth),
+            let height = Double(regionHeight)
+        else {
+            return nil
+        }
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    private func regionField(_ label: String, value: Binding<String>) -> some View {
+        TextField(label, text: value)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 82)
     }
 }

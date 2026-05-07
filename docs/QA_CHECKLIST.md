@@ -1,30 +1,30 @@
 # LumiShot V1 QA Checklist
 
 ## Capture
-- [ ] Region capture works
-- [ ] Window capture works
+- [x] Region capture works (automated: `CaptureServiceTests`)
+- [x] Window capture works (automated: `CaptureServiceTests`)
 - [ ] Full-screen capture works
-- [ ] Scrolling capture works or falls back safely
+- [x] Scrolling capture works or falls back safely (automated: `CaptureServiceTests`)
 
 ## Annotation
-- [ ] Text annotation
-- [ ] Box annotation
-- [ ] Arrow annotation
-- [ ] Number annotation auto increments
-- [ ] Number annotation supports manual edit
+- [x] Text annotation (automated: `AnnotationStoreTests`)
+- [x] Box annotation (automated: `AnnotationStoreTests`)
+- [x] Arrow annotation (automated: `AnnotationStoreTests`)
+- [x] Number annotation auto increments (automated: `AnnotationStoreTests`)
+- [x] Number annotation supports manual edit (automated: `AnnotationStoreTests`)
 
 ## Extraction
-- [ ] Image OCR path
+- [x] Image OCR path (automated: `ImageTextExtractorTests`)
 - [ ] PDF text-layer extraction path
-- [ ] PDF OCR fallback path
+- [x] PDF OCR fallback path (automated: `ExtractionPipelineTests`)
 - [ ] Web DOM extraction path
 - [ ] Web OCR fallback path
 
 ## Export
-- [ ] PNG export
-- [ ] JPEG export
-- [ ] TXT export
-- [ ] Markdown export
+- [x] PNG export (automated: `ExportServiceTests`)
+- [x] JPEG export (automated: `ExportServiceTests`)
+- [x] TXT export (automated: `ExportServiceTests`)
+- [x] Markdown export (automated: `ExportServiceTests`)
 
 ## Stability
 - [ ] 30 loops of capture -> annotate -> export without crash

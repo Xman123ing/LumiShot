@@ -1,5 +1,5 @@
 import XCTest
-@testable import LumiShot
+@testable import LumiShotKit
 
 final class CapturePermissionServiceTests: XCTestCase {
     func testDeniedPermissionMapsToDeniedState() {

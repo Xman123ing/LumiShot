@@ -1,5 +1,6 @@
+import CoreGraphics
 import XCTest
-@testable import LumiShot
+@testable import LumiShotKit
 
 final class MainWorkflowViewModelTests: XCTestCase {
     @MainActor
@@ -12,4 +13,81 @@ final class MainWorkflowViewModelTests: XCTestCase {
         XCTAssertEqual(output.png.pathExtension, "png")
         XCTAssertFalse(sut.diagnostics.sessionID.isEmpty)
     }
+
+    @MainActor
+    func testRunCapturePassesRegionToCaptureService() async throws {
+        let expectedRegion = CGRect(x: 5, y: 8, width: 240, height: 160)
+        let recorder = CaptureRecorder()
+        let captureSpy = CaptureServiceSpy(recorder: recorder)
+        let sut = MainWorkflowViewModel(
+            captureService: captureSpy,
+            imageTextExtractor: ImageTextExtractor(ocrEngine: WorkflowMockOCR())
+        )
+
+        try await sut.runCapture(mode: .region, region: expectedRegion)
+
+        let recorded = await recorder.snapshot()
+        XCTAssertEqual(recorded.mode, .region)
+        XCTAssertEqual(recorded.region, expectedRegion)
+    }
+
+    @MainActor
+    func testAddAnnotationToolsAppendExpectedKinds() {
+        let sut = MainWorkflowViewModel.mockedSuccessPath()
+
+        sut.addTextAnnotation("hello")
+        sut.addBoxAnnotation()
+        sut.addArrowAnnotation()
+        sut.addNumberAnnotation()
+
+        XCTAssertEqual(sut.annotationStore.items.map(\.kind), [.text, .box, .arrow, .number])
+        XCTAssertEqual(sut.annotationStore.items.first?.displayValue, "hello")
+    }
+}
+
+private struct CaptureServiceSpy: CaptureServicing {
+    let recorder: CaptureRecorder
+
+    func capture(mode: CaptureMode, region: CGRect?) async throws -> CaptureAsset {
+        await recorder.record(mode: mode, region: region)
+        return CaptureAsset(mode: mode, image: makeWorkflowMockImage())
+    }
+}
+
+private struct WorkflowMockOCR: OCREngine {
+    func recognize(image: CGImage, languageHints: [String]) async throws -> OCRResult {
+        let _ = image
+        let _ = languageHints
+        return OCRResult(text: "ok")
+    }
+}
+
+private actor CaptureRecorder {
+    private(set) var mode: CaptureMode?
+    private(set) var region: CGRect?
+
+    func record(mode: CaptureMode, region: CGRect?) {
+        self.mode = mode
+        self.region = region
+    }
+
+    func snapshot() -> (mode: CaptureMode?, region: CGRect?) {
+        (mode, region)
+    }
+}
+
+private func makeWorkflowMockImage() -> CGImage {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let context = CGContext(
+        data: nil,
+        width: 8,
+        height: 8,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )!
+    context.setFillColor(gray: 0.3, alpha: 1.0)
+    context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+    return context.makeImage()!
 }

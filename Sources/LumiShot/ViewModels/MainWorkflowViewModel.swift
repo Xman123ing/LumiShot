@@ -11,24 +11,39 @@ public final class MainWorkflowViewModel: ObservableObject {
     private let captureService: CaptureServicing
     private let imageTextExtractor: ImageTextExtractor
     private let exportService: ExportService
+    private let compositionRenderer: CompositionRenderer
 
     public init(
         captureService: CaptureServicing,
         imageTextExtractor: ImageTextExtractor,
-        exportService: ExportService = ExportService()
+        exportService: ExportService = ExportService(),
+        compositionRenderer: CompositionRenderer = CompositionRenderer()
     ) {
         self.captureService = captureService
         self.imageTextExtractor = imageTextExtractor
         self.exportService = exportService
+        self.compositionRenderer = compositionRenderer
     }
 
-    public func runCapture(mode: CaptureMode) async throws {
-        currentCapture = try await captureService.capture(mode: mode)
+    public func runCapture(mode: CaptureMode, region: CGRect? = nil) async throws {
+        currentCapture = try await captureService.capture(mode: mode, region: region)
         diagnostics.captureStatus = "success:\(mode.rawValue)"
     }
 
     public func addNumberAnnotation() {
         _ = annotationStore.addNumber(at: CGPoint(x: 40, y: 40))
+    }
+
+    public func addTextAnnotation(_ value: String = "Text") {
+        _ = annotationStore.addText(value, at: CGPoint(x: 90, y: 60))
+    }
+
+    public func addBoxAnnotation() {
+        _ = annotationStore.addBox(at: CGPoint(x: 160, y: 90))
+    }
+
+    public func addArrowAnnotation() {
+        _ = annotationStore.addArrow(at: CGPoint(x: 210, y: 120))
     }
 
     public func extractTextFromCurrentAsset() async throws {
@@ -40,7 +55,8 @@ public final class MainWorkflowViewModel: ObservableObject {
 
     public func exportCurrent() throws -> ExportURLs {
         let text = extractedText?.content ?? ""
-        let image = currentCapture?.image ?? Self.makeFallbackImage()
+        let baseImage = currentCapture?.image ?? Self.makeFallbackImage()
+        let image = compositionRenderer.render(baseImage: baseImage, annotations: annotationStore.items)
         let urls = try exportService.exportAll(
             image: image,
             text: text,
@@ -81,8 +97,9 @@ public final class MainWorkflowViewModel: ObservableObject {
 }
 
 private struct MockCaptureService: CaptureServicing {
-    func capture(mode: CaptureMode) async throws -> CaptureAsset {
-        CaptureAsset(mode: mode, image: makeMockImage())
+    func capture(mode: CaptureMode, region: CGRect?) async throws -> CaptureAsset {
+        let _ = region
+        return CaptureAsset(mode: mode, image: makeMockImage())
     }
 
     private func makeMockImage() -> CGImage {

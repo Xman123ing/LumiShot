@@ -1,5 +1,5 @@
 import SwiftUI
-import LumiShot
+import LumiShotKit
 
 @main
 struct LumiShotAppMain: App {

@@ -16,6 +16,18 @@ public struct AnnotationItem: Equatable, Identifiable {
 }
 
 public extension AnnotationItem {
+    static func text(value: String, center: CGPoint) -> AnnotationItem {
+        AnnotationItem(kind: .text, center: center, displayValue: value)
+    }
+
+    static func box(center: CGPoint) -> AnnotationItem {
+        AnnotationItem(kind: .box, center: center)
+    }
+
+    static func arrow(center: CGPoint) -> AnnotationItem {
+        AnnotationItem(kind: .arrow, center: center)
+    }
+
     static func number(value: String, center: CGPoint) -> AnnotationItem {
         AnnotationItem(kind: .number, center: center, displayValue: value)
     }

@@ -7,22 +7,22 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .library(name: "LumiShot", targets: ["LumiShot"]),
-        .executable(name: "LumiShotApp", targets: ["LumiShotApp"])
+        .library(name: "LumiShotKit", targets: ["LumiShotKit"]),
+        .executable(name: "LumiShot", targets: ["LumiShot"])
     ],
     targets: [
         .target(
-            name: "LumiShot",
+            name: "LumiShotKit",
             path: "Sources/LumiShot"
         ),
         .executableTarget(
-            name: "LumiShotApp",
-            dependencies: ["LumiShot"],
+            name: "LumiShot",
+            dependencies: ["LumiShotKit"],
             path: "Sources/LumiShotApp"
         ),
         .testTarget(
             name: "LumiShotTests",
-            dependencies: ["LumiShot"],
+            dependencies: ["LumiShotKit"],
             path: "Tests/LumiShotTests"
         )
     ]
