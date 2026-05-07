@@ -53,6 +53,37 @@ public struct CompositionRenderer {
             context.setStrokeColor(CGColor(red: 1.0, green: 0.90, blue: 0.75, alpha: 0.95))
             context.setLineWidth(2)
             context.strokeEllipse(in: CGRect(x: item.center.x - 12, y: item.center.y - 12, width: 24, height: 24))
+        case .mosaic:
+            let area = CGRect(x: item.center.x - 46, y: item.center.y - 32, width: 92, height: 64)
+            let tile: CGFloat = 8
+            var row = 0
+            var y = area.minY
+            while y < area.maxY {
+                var column = 0
+                var x = area.minX
+                while x < area.maxX {
+                    let rect = CGRect(
+                        x: x,
+                        y: y,
+                        width: min(tile, area.maxX - x),
+                        height: min(tile, area.maxY - y)
+                    )
+                    let bright = (row + column).isMultiple(of: 2)
+                    if bright {
+                        context.setFillColor(CGColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 0.86))
+                    } else {
+                        context.setFillColor(CGColor(red: 0.45, green: 0.45, blue: 0.45, alpha: 0.86))
+                    }
+                    context.fill(rect)
+                    column += 1
+                    x += tile
+                }
+                row += 1
+                y += tile
+            }
+            context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.75))
+            context.setLineWidth(1.5)
+            context.stroke(area)
         }
     }
 }

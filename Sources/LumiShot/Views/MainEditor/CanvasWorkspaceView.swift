@@ -19,7 +19,7 @@ struct CanvasWorkspaceView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.black.opacity(0.18))
+                .fill(.white.opacity(0.72))
 
             if let captureImage {
                 Image(nsImage: NSImage(cgImage: captureImage, size: NSSize(width: captureImage.width, height: captureImage.height)))
@@ -54,7 +54,7 @@ struct CanvasWorkspaceView: View {
         } else {
             Text(emptyPlaceholderText)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(.black.opacity(0.45))
         }
     }
 

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 public enum CapturePermissionState: Equatable, Sendable {
     case granted
@@ -8,18 +9,42 @@ public enum CapturePermissionState: Equatable, Sendable {
 
 public struct CapturePermissionService: Sendable {
     public typealias Checker = @Sendable () -> CapturePermissionState
-    private let checker: Checker
+    public typealias Requester = @Sendable () -> Bool
 
-    public init(checker: @escaping Checker = Self.systemPermissionCheck) {
+    private static let sessionLock = NSLock()
+    private static nonisolated(unsafe) var sessionGrantRecorded = false
+
+    private let checker: Checker
+    private let requester: Requester
+
+    public init(
+        checker: @escaping Checker = Self.systemPermissionCheck,
+        requester: @escaping Requester = Self.systemPermissionRequest
+    ) {
         self.checker = checker
+        self.requester = requester
     }
 
     public func currentState() -> CapturePermissionState {
-        checker()
+        let state = checker()
+        switch state {
+        case .granted:
+            Self.recordSessionGrant()
+            return .granted
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return Self.hasSessionGrant() ? .granted : .notDetermined
+        }
     }
 
+    @discardableResult
     public func requestAccess() -> Bool {
-        CGRequestScreenCaptureAccess()
+        let granted = requester()
+        if granted {
+            Self.recordSessionGrant()
+        }
+        return granted
     }
 
     public static func systemPermissionCheck() -> CapturePermissionState {
@@ -27,5 +52,28 @@ public struct CapturePermissionService: Sendable {
             return .granted
         }
         return .notDetermined
+    }
+
+    public static func systemPermissionRequest() -> Bool {
+        CGRequestScreenCaptureAccess()
+    }
+
+    static func resetSessionGrantForTesting() {
+        sessionLock.lock()
+        sessionGrantRecorded = false
+        sessionLock.unlock()
+    }
+
+    private static func recordSessionGrant() {
+        sessionLock.lock()
+        sessionGrantRecorded = true
+        sessionLock.unlock()
+    }
+
+    private static func hasSessionGrant() -> Bool {
+        sessionLock.lock()
+        let granted = sessionGrantRecorded
+        sessionLock.unlock()
+        return granted
     }
 }

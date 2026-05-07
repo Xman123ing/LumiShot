@@ -36,6 +36,13 @@ public final class AnnotationStore {
         return item
     }
 
+    @discardableResult
+    public func addMosaic(at point: CGPoint) -> AnnotationItem {
+        let item = AnnotationItem.mosaic(center: point)
+        items.append(item)
+        return item
+    }
+
     public func item(id: UUID) -> AnnotationItem? {
         items.first(where: { $0.id == id })
     }

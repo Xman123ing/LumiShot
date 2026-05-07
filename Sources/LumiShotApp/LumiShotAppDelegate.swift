@@ -62,27 +62,56 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 private final class RegionOCRCoordinator {
     private let ocrEngine = VisionOCREngine()
     private var overlayController: SelectionOverlayWindowController?
+    private var temporarilyHiddenWindows: [NSWindow] = []
+    private var wasAppActiveWhenSelectionStarted = false
 
     func beginSelection() {
         guard overlayController == nil else { return }
+        wasAppActiveWhenSelectionStarted = NSApp.isActive
+        temporarilyHiddenWindows = NSApp.windows.filter { $0.isVisible }
+        for window in temporarilyHiddenWindows {
+            window.orderOut(nil)
+        }
         let controller = SelectionOverlayWindowController { [weak self] rect in
             self?.overlayController = nil
-            self?.performOCR(for: rect)
+            self?.performOCR(for: rect) { [weak self] in
+                self?.restoreHiddenWindows()
+            }
         }
         overlayController = controller
         controller.show()
     }
 
-    private func performOCR(for rect: CGRect) {
-        guard rect.width > 8, rect.height > 8 else { return }
-        guard let image = CGWindowListCreateImage(
-            rect,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution]
-        ) else { return }
+    private func performOCR(for rect: CGRect, onFinished: @escaping @MainActor () -> Void) {
+        guard rect.width > 8, rect.height > 8 else {
+            onFinished()
+            return
+        }
+        let desktopFrame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { partial, next in
+            partial.union(next)
+        }
+        let normalizedRect = CGRect(
+            x: rect.origin.x,
+            y: desktopFrame.maxY - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        ).integral
+
         let engine = ocrEngine
         Task { [engine] in
+            defer {
+                Task { @MainActor in
+                    onFinished()
+                }
+            }
+            // Wait a frame so the overlay window fully disappears before capture.
+            try? await Task.sleep(for: .milliseconds(120))
+            guard let image = CGWindowListCreateImage(
+                normalizedRect,
+                .optionOnScreenOnly,
+                kCGNullWindowID,
+                [.bestResolution]
+            ) else { return }
             let result = try? await engine.recognize(image: image, languageHints: ["zh-Hans", "en-US"])
             let text = result?.text ?? ""
             NSPasteboard.general.clearContents()
@@ -92,9 +121,18 @@ private final class RegionOCRCoordinator {
                 object: nil,
                 userInfo: [LumiShotNotifications.extractedTextKey: text]
             )
-            await MainActor.run {
-                NSApp.activate(ignoringOtherApps: true)
-            }
+        }
+    }
+
+    @MainActor
+    private func restoreHiddenWindows() {
+        let windows = temporarilyHiddenWindows
+        temporarilyHiddenWindows = []
+        guard !windows.isEmpty else { return }
+        if wasAppActiveWhenSelectionStarted {
+            windows.forEach { $0.makeKeyAndOrderFront(nil) }
+        } else {
+            windows.forEach { $0.orderBack(nil) }
         }
     }
 }

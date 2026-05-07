@@ -1,69 +1,92 @@
 import AppKit
-import SwiftUI
 import LumiShotKit
+import SwiftUI
 
 struct OCRShortcutSettingsView: View {
-    @AppStorage(OCRShortcutStorage.key) private var key: String = "e"
-    @AppStorage(OCRShortcutStorage.useCommand) private var useCommand: Bool = true
-    @AppStorage(OCRShortcutStorage.useShift) private var useShift: Bool = false
-    @AppStorage(OCRShortcutStorage.useOption) private var useOption: Bool = false
-    @AppStorage(OCRShortcutStorage.useControl) private var useControl: Bool = false
+    @State private var recordingAction: AppShortcutAction?
     @State private var isRecording = false
     @State private var localMonitor: Any?
+    @State private var shortcuts: [AppShortcutAction: AppShortcutRecord] = {
+        var map: [AppShortcutAction: AppShortcutRecord] = [:]
+        for action in AppShortcutAction.allCases {
+            map[action] = AppShortcutStore.load(action)
+        }
+        return map
+    }()
 
     private static let recorderModifierMask: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
 
     var body: some View {
-        Form {
-            Section("OCR Shortcut") {
-                Text("Current: \(shortcutLabel)")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Shortcuts")
+                .font(.title3.weight(.semibold))
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+            List {
+                Section("Shortcut Module") {
+                    ForEach(AppShortcutAction.allCases, id: \.self) { action in
+                        Button {
+                            startRecording(for: action)
+                        } label: {
+                            HStack {
+                                Text(action.title)
+                                Spacer()
+                                Text(shortcutLabel(for: action))
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Click to record a shortcut")
+                    }
+                }
+            }
+            .listStyle(.inset)
+
+            if isRecording {
+                Text("Recording \(recordingAction?.title ?? "shortcut")... press a letter/number, or Esc to cancel.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal)
+            }
 
-                if isRecording {
-                    Text("Press Esc to cancel")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button(isRecording ? "Recording… press a letter or number" : "Record Shortcut") {
-                    startRecording()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isRecording)
-                .accessibilityLabel(isRecording ? "Recording shortcut" : "Record shortcut")
-                .help("Capture a letter or number with optional Command, Shift, Option, or Control.")
-
-                Button("Reset to Default (Command + E)") {
+            HStack {
+                Spacer()
+                Button("Reset to Default") {
                     stopRecording()
-                    key = "e"
-                    useCommand = true
-                    useShift = false
-                    useOption = false
-                    useControl = false
+                    resetToDefault()
                 }
                 .buttonStyle(.bordered)
-                .accessibilityLabel("Reset OCR shortcut to Command-E")
             }
+            .padding(.horizontal)
+            .padding(.bottom, 12)
         }
-        .padding()
-        .frame(width: 360)
+        .frame(width: 420, height: 280)
         .onDisappear {
             stopRecording()
         }
     }
 
-    private var shortcutLabel: String {
+    private func formattedLabel(for record: AppShortcutRecord) -> String {
         var parts: [String] = []
-        if useControl { parts.append("Control") }
-        if useOption { parts.append("Option") }
-        if useShift { parts.append("Shift") }
-        if useCommand { parts.append("Command") }
-        parts.append(key.uppercased())
+        if record.useControl { parts.append("Control") }
+        if record.useOption { parts.append("Option") }
+        if record.useShift { parts.append("Shift") }
+        if record.useCommand { parts.append("Command") }
+        parts.append(record.configuration.storageKey.uppercased())
         return parts.joined(separator: " + ")
     }
 
-    private func startRecording() {
+    private func shortcutLabel(for action: AppShortcutAction) -> String {
+        guard let record = shortcuts[action] else { return "-" }
+        return formattedLabel(for: record)
+    }
+
+    private func startRecording(for action: AppShortcutAction) {
         stopRecording()
+        recordingAction = action
         isRecording = true
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 { // kVK_Escape
@@ -77,11 +100,7 @@ struct OCRShortcutSettingsView: View {
             guard let first = raw.first, first.isLetter || first.isNumber else {
                 return event
             }
-            key = String(first)
-            useCommand = flags.contains(.command)
-            useShift = flags.contains(.shift)
-            useOption = flags.contains(.option)
-            useControl = flags.contains(.control)
+            applyRecordedShortcut(action: action, key: String(first), flags: flags)
             stopRecording()
             return nil
         }
@@ -92,6 +111,34 @@ struct OCRShortcutSettingsView: View {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
+        recordingAction = nil
         isRecording = false
+    }
+
+    private func applyRecordedShortcut(action: AppShortcutAction, key: String, flags: NSEvent.ModifierFlags) {
+        let record = AppShortcutRecord(
+            key: key,
+            useCommand: flags.contains(.command),
+            useShift: flags.contains(.shift),
+            useOption: flags.contains(.option),
+            useControl: flags.contains(.control)
+        )
+        shortcuts[action] = record
+        AppShortcutStore.save(action, record: record)
+    }
+
+    private func resetToDefault() {
+        for action in AppShortcutAction.allCases {
+            let d = action.defaults
+            let record = AppShortcutRecord(
+                key: d.key,
+                useCommand: d.useCommand,
+                useShift: d.useShift,
+                useOption: d.useOption,
+                useControl: d.useControl
+            )
+            shortcuts[action] = record
+            AppShortcutStore.save(action, record: record)
+        }
     }
 }

@@ -46,6 +46,10 @@ public final class MainWorkflowViewModel: ObservableObject {
         _ = annotationStore.addArrow(at: CGPoint(x: 210, y: 120))
     }
 
+    public func addMosaicAnnotation() {
+        _ = annotationStore.addMosaic(at: CGPoint(x: 250, y: 150))
+    }
+
     public func extractTextFromCurrentAsset() async throws {
         let image = currentCapture?.image ?? Self.makeFallbackImage()
         let output = try await imageTextExtractor.extract(from: image)

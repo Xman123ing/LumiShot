@@ -12,15 +12,17 @@ final class AnnotationStoreTests: XCTestCase {
         XCTAssertEqual(sut.item(id: second.id)?.displayValue, "9")
     }
 
-    func testTextBoxArrowToolsCanBeAddedAndTextUpdated() {
+    func testTextBoxArrowMosaicToolsCanBeAddedAndTextUpdated() {
         let sut = AnnotationStore()
         let textItem = sut.addText("hello", at: CGPoint(x: 10, y: 20))
         let boxItem = sut.addBox(at: CGPoint(x: 40, y: 50))
         let arrowItem = sut.addArrow(at: CGPoint(x: 80, y: 90))
+        let mosaicItem = sut.addMosaic(at: CGPoint(x: 110, y: 120))
 
         XCTAssertEqual(textItem.kind, .text)
         XCTAssertEqual(boxItem.kind, .box)
         XCTAssertEqual(arrowItem.kind, .arrow)
+        XCTAssertEqual(mosaicItem.kind, .mosaic)
         XCTAssertEqual(textItem.displayValue, "hello")
 
         sut.updateText(id: textItem.id, value: "updated")

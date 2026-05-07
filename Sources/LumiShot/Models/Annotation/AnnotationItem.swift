@@ -31,4 +31,8 @@ public extension AnnotationItem {
     static func number(value: String, center: CGPoint) -> AnnotationItem {
         AnnotationItem(kind: .number, center: center, displayValue: value)
     }
+
+    static func mosaic(center: CGPoint) -> AnnotationItem {
+        AnnotationItem(kind: .mosaic, center: center)
+    }
 }

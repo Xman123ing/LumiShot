@@ -3,4 +3,5 @@ public enum AnnotationKind: Equatable {
     case box
     case arrow
     case number
+    case mosaic
 }

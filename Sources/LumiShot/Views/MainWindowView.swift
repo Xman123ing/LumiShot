@@ -31,17 +31,7 @@ public struct MainWindowView: View {
                     selectedMode: $selectedMode,
                     zoomText: "100%",
                     onCapture: {
-                        Task {
-                            do {
-                                try await viewModel.runCapture(
-                                    mode: selectedMode,
-                                    region: regionRectForSelection()
-                                )
-                                showToast("Capture completed.")
-                            } catch {
-                                showToast("Capture failed: \(error.localizedDescription)")
-                            }
-                        }
+                        triggerCapture()
                     },
                     onCopy: copyCurrentCaptureImage,
                     onSave: saveCurrentCaptureImage,
@@ -60,6 +50,10 @@ public struct MainWindowView: View {
                     onAddNumber: {
                         viewModel.addNumberAnnotation()
                         showToast("Counter added.")
+                    },
+                    onAddMosaic: {
+                        viewModel.addMosaicAnnotation()
+                        showToast("Mosaic added.")
                     },
                     onBackdrop: {
                         showToast("Backdrop style selected.")
@@ -112,6 +106,15 @@ public struct MainWindowView: View {
                 showToast("OCR applied (\(text.count) chars).")
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.triggerCapture)) { _ in
+            triggerCapture()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.triggerCopyCapture)) { _ in
+            copyCurrentCaptureImage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.triggerSaveCapture)) { _ in
+            saveCurrentCaptureImage()
+        }
         .preferredColorScheme(.dark)
         .fontDesign(.rounded)
     }
@@ -160,4 +163,19 @@ public struct MainWindowView: View {
             showToast("Save failed: \(error.localizedDescription)")
         }
     }
+
+    private func triggerCapture() {
+        Task {
+            do {
+                try await viewModel.runCapture(
+                    mode: selectedMode,
+                    region: regionRectForSelection()
+                )
+                showToast("Capture completed.")
+            } catch {
+                showToast("Capture failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
 }
