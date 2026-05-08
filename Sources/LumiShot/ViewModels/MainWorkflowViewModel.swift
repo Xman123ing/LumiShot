@@ -27,27 +27,90 @@ public final class MainWorkflowViewModel: ObservableObject {
 
     public func runCapture(mode: CaptureMode, region: CGRect? = nil) async throws {
         currentCapture = try await captureService.capture(mode: mode, region: region)
+        annotationStore = AnnotationStore()
+        extractedText = nil
         diagnostics.captureStatus = "success:\(mode.rawValue)"
     }
 
     public func addNumberAnnotation() {
+        objectWillChange.send()
         _ = annotationStore.addNumber(at: CGPoint(x: 40, y: 40))
     }
 
     public func addTextAnnotation(_ value: String = "Text") {
+        objectWillChange.send()
         _ = annotationStore.addText(value, at: CGPoint(x: 90, y: 60))
     }
 
     public func addBoxAnnotation() {
+        objectWillChange.send()
         _ = annotationStore.addBox(at: CGPoint(x: 160, y: 90))
     }
 
+    public func addBoxAnnotation(from start: CGPoint, to end: CGPoint) {
+        objectWillChange.send()
+        _ = annotationStore.addBox(from: start, to: end)
+    }
+
     public func addArrowAnnotation() {
+        objectWillChange.send()
         _ = annotationStore.addArrow(at: CGPoint(x: 210, y: 120))
     }
 
+    public func addArrowAnnotation(from start: CGPoint, to end: CGPoint) {
+        objectWillChange.send()
+        _ = annotationStore.addArrow(from: start, to: end)
+    }
+
     public func addMosaicAnnotation() {
+        objectWillChange.send()
         _ = annotationStore.addMosaic(at: CGPoint(x: 250, y: 150))
+    }
+
+    public func addFloatingPinAnnotation() {
+        objectWillChange.send()
+        _ = annotationStore.addFloatingPin(at: CGPoint(x: 220, y: 120))
+    }
+
+    public func addBackdropAnnotation() {
+        objectWillChange.send()
+        _ = annotationStore.addBackdrop(at: CGPoint(x: 260, y: 170))
+    }
+
+    @discardableResult
+    public func addTextAnnotation(at point: CGPoint, value: String = "Text") -> AnnotationItem {
+        objectWillChange.send()
+        return annotationStore.addText(value, at: point)
+    }
+
+    public func addNumberAnnotation(at point: CGPoint, tailPoint: CGPoint? = nil) {
+        objectWillChange.send()
+        _ = annotationStore.addNumber(at: point, tailPoint: tailPoint)
+    }
+
+    public func updateTextAnnotation(id: UUID, value: String) {
+        objectWillChange.send()
+        annotationStore.updateText(id: id, value: value)
+    }
+
+    public func updateAnnotationTail(id: UUID, point: CGPoint) {
+        objectWillChange.send()
+        annotationStore.updateTrailingPoint(id: id, point: point)
+    }
+
+    public func moveAnnotation(id: UUID, delta: CGPoint) {
+        objectWillChange.send()
+        annotationStore.moveItem(id: id, delta: delta)
+    }
+
+    public func setAnnotationPosition(id: UUID, center: CGPoint, trailingPoint: CGPoint?) {
+        objectWillChange.send()
+        annotationStore.setItemPosition(id: id, center: center, trailingPoint: trailingPoint)
+    }
+
+    public func replaceAnnotations(with items: [AnnotationItem]) {
+        objectWillChange.send()
+        annotationStore.replaceAll(with: items)
     }
 
     public func extractTextFromCurrentAsset() async throws {
@@ -64,8 +127,7 @@ public final class MainWorkflowViewModel: ObservableObject {
 
     public func exportCurrent() throws -> ExportURLs {
         let text = extractedText?.content ?? ""
-        let baseImage = currentCapture?.image ?? Self.makeFallbackImage()
-        let image = compositionRenderer.render(baseImage: baseImage, annotations: annotationStore.items)
+        let image = composedImage()
         let urls = try exportService.exportAll(
             image: image,
             text: text,
@@ -74,6 +136,11 @@ public final class MainWorkflowViewModel: ObservableObject {
         )
         diagnostics.exportStatus = "success"
         return urls
+    }
+
+    public func composedImage() -> CGImage {
+        let baseImage = currentCapture?.image ?? Self.makeFallbackImage()
+        return compositionRenderer.render(baseImage: baseImage, annotations: annotationStore.items)
     }
 
     public static func mockedSuccessPath() -> MainWorkflowViewModel {

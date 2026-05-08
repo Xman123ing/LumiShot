@@ -40,8 +40,13 @@ final class MainWorkflowViewModelTests: XCTestCase {
         sut.addArrowAnnotation()
         sut.addNumberAnnotation()
         sut.addMosaicAnnotation()
+        sut.addFloatingPinAnnotation()
+        sut.addBackdropAnnotation()
 
-        XCTAssertEqual(sut.annotationStore.items.map(\.kind), [.text, .box, .arrow, .number, .mosaic])
+        XCTAssertEqual(
+            sut.annotationStore.items.map(\.kind),
+            [.text, .box, .arrow, .number, .mosaic, .floatingPin, .backdrop]
+        )
         XCTAssertEqual(sut.annotationStore.items.first?.displayValue, "hello")
     }
 

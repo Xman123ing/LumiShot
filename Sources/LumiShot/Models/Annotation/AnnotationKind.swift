@@ -4,4 +4,6 @@ public enum AnnotationKind: Equatable {
     case arrow
     case number
     case mosaic
+    case floatingPin
+    case backdrop
 }

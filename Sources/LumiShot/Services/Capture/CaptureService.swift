@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -49,7 +50,7 @@ public struct CaptureService: CaptureServicing {
             guard let image = fullScreenImageProvider() else {
                 throw CaptureError.captureFailed
             }
-            return CaptureAsset(mode: mode, image: image)
+            return CaptureAsset(mode: mode, image: image, logicalSize: nil)
         case .region:
             guard let region, region.width > 0, region.height > 0 else {
                 throw CaptureError.invalidRegion
@@ -57,17 +58,17 @@ public struct CaptureService: CaptureServicing {
             guard let image = regionImageProvider(region) else {
                 throw CaptureError.captureFailed
             }
-            return CaptureAsset(mode: mode, image: image)
+            return CaptureAsset(mode: mode, image: image, logicalSize: region.standardized.size)
         case .window:
             guard let image = windowImageProvider() else {
                 throw CaptureError.captureFailed
             }
-            return CaptureAsset(mode: mode, image: image)
+            return CaptureAsset(mode: mode, image: image, logicalSize: nil)
         case .scrolling:
             guard let image = scrollingImageProvider() else {
                 throw CaptureError.captureFailed
             }
-            return CaptureAsset(mode: mode, image: image)
+            return CaptureAsset(mode: mode, image: image, logicalSize: nil)
         }
     }
 
@@ -76,7 +77,29 @@ public struct CaptureService: CaptureServicing {
     }
 
     public static func defaultRegionImageProvider(region: CGRect) -> CGImage? {
-        CGDisplayCreateImage(CGMainDisplayID(), rect: region)
+        let appKitRegion = region.standardized
+        let scale = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: appKitRegion.midX, y: appKitRegion.midY)) })?.backingScaleFactor ?? 2
+        let pixelAlignedRegion = CGRect(
+            x: (appKitRegion.origin.x * scale).rounded() / scale,
+            y: (appKitRegion.origin.y * scale).rounded() / scale,
+            width: (appKitRegion.width * scale).rounded() / scale,
+            height: (appKitRegion.height * scale).rounded() / scale
+        )
+        let desktopFrame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { partial, next in
+            partial.union(next)
+        }
+        let quartzRect = CGRect(
+            x: pixelAlignedRegion.origin.x,
+            y: desktopFrame.maxY - pixelAlignedRegion.maxY,
+            width: pixelAlignedRegion.width,
+            height: pixelAlignedRegion.height
+        ).standardized
+        return CGWindowListCreateImage(
+            quartzRect,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution]
+        )
     }
 
     public static func defaultWindowImageProvider() -> CGImage? {

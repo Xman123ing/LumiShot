@@ -2,17 +2,17 @@ import SwiftUI
 
 struct TopToolbarView: View {
     @Environment(\.openSettings) private var openSettings
-    @Binding var selectedMode: CaptureMode
 
+    let activeTool: ToolbarTool?
     let zoomText: String
 
+    let onExtractOCR: () -> Void
     let onCapture: () -> Void
+    let onMove: () -> Void
+    let onUndo: () -> Void
     let onCopy: () -> Void
     let onSave: () -> Void
-    let onAddBox: () -> Void
-    let onAddArrow: () -> Void
-    let onAddText: () -> Void
-    let onAddNumber: () -> Void
+    let onSelectPrimaryTool: (ToolbarTool) -> Void
     let onAddMosaic: () -> Void
     let onBackdrop: () -> Void
     let onFloatingPin: () -> Void
@@ -21,7 +21,18 @@ struct TopToolbarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            Button(action: onExtractOCR) {
+                Image(systemName: "text.viewfinder")
+                    .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+            }
+            .buttonStyle(.bordered)
+            .help("Extract OCR")
+
+            toolbarDivider
+
             primaryAnnotationButtons
+
+            moveButton
 
             secondaryAnnotationButtons
 
@@ -36,6 +47,13 @@ struct TopToolbarView: View {
             }
             .buttonStyle(.bordered)
             .help("Copy")
+
+            Button(action: onUndo) {
+                Image(systemName: "arrow.uturn.backward")
+                    .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+            }
+            .buttonStyle(.bordered)
+            .help("Undo")
 
             Button(action: onSave) {
                 Image(systemName: "externaldrive")
@@ -52,6 +70,16 @@ struct TopToolbarView: View {
         }
     }
 
+    @ViewBuilder
+    private var moveButton: some View {
+        Button(action: onMove) {
+            Image(systemName: "hand.point.up.left.fill")
+                .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+        }
+        .buttonStyle(.bordered)
+        .help("Move")
+    }
+
     private var toolbarDivider: some View {
         Divider()
             .frame(height: 20)
@@ -61,12 +89,21 @@ struct TopToolbarView: View {
     @ViewBuilder
     private var primaryAnnotationButtons: some View {
         ForEach(ToolbarTool.primaryTools, id: \.self) { tool in
-            Button(action: primaryAction(for: tool)) {
-                Image(systemName: primaryIcon(for: tool))
-                    .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+            if activeTool == tool {
+                Button(action: { onSelectPrimaryTool(tool) }) {
+                    Image(systemName: primaryIcon(for: tool))
+                        .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+                }
+                .buttonStyle(.borderedProminent)
+                .help(primaryLabel(for: tool))
+            } else {
+                Button(action: { onSelectPrimaryTool(tool) }) {
+                    Image(systemName: primaryIcon(for: tool))
+                        .modifier(ToolbarIconStyle(size: toolbarIconSize, width: toolbarButtonWidth))
+                }
+                .buttonStyle(.bordered)
+                .help(primaryLabel(for: tool))
             }
-            .buttonStyle(.bordered)
-            .help(primaryLabel(for: tool))
         }
     }
 
@@ -84,20 +121,6 @@ struct TopToolbarView: View {
 
     private var moreToolsMenu: some View {
         Menu {
-            Menu("Capture Mode") {
-                ForEach(CaptureMode.allCases, id: \.self) { mode in
-                    Button {
-                        selectedMode = mode
-                    } label: {
-                        if selectedMode == mode {
-                            Label(modeLabel(mode), systemImage: "checkmark")
-                        } else {
-                            Text(modeLabel(mode))
-                        }
-                    }
-                }
-            }
-            Divider()
             Button("Capture Screenshot", action: onCapture)
             Button("Mosaic", action: onAddMosaic)
             Divider()
@@ -158,16 +181,6 @@ struct TopToolbarView: View {
         }
     }
 
-    private func primaryAction(for tool: ToolbarTool) -> () -> Void {
-        switch tool {
-        case .rectangle: onAddBox
-        case .arrow: onAddArrow
-        case .text: onAddText
-        case .counter: onAddNumber
-        case .floatingPin, .backdrop: {}
-        }
-    }
-
     private func moreLabel(for tool: ToolbarTool) -> String {
         switch tool {
         case .floatingPin: "Floating Pin"
@@ -181,15 +194,6 @@ struct TopToolbarView: View {
         case .floatingPin: onFloatingPin
         case .backdrop: onBackdrop
         case .rectangle, .arrow, .text, .counter: {}
-        }
-    }
-
-    private func modeLabel(_ mode: CaptureMode) -> String {
-        switch mode {
-        case .region: "Region"
-        case .window: "Window"
-        case .fullScreen: "Full Screen"
-        case .scrolling: "Scrolling"
         }
     }
 

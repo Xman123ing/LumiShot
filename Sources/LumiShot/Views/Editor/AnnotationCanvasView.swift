@@ -2,9 +2,17 @@ import SwiftUI
 
 public struct AnnotationCanvasView: View {
     public let items: [AnnotationItem]
+    public let onTextDoubleClick: ((UUID) -> Void)?
+    public let onCounterTap: ((UUID) -> Void)?
 
-    public init(items: [AnnotationItem]) {
+    public init(
+        items: [AnnotationItem],
+        onTextDoubleClick: ((UUID) -> Void)? = nil,
+        onCounterTap: ((UUID) -> Void)? = nil
+    ) {
         self.items = items
+        self.onTextDoubleClick = onTextDoubleClick
+        self.onCounterTap = onCounterTap
     }
 
     public var body: some View {
@@ -12,29 +20,114 @@ public struct AnnotationCanvasView: View {
             ForEach(items) { item in
                 switch item.kind {
                 case .number:
-                    Text(item.displayValue ?? "")
-                        .font(.system(size: 14, weight: .bold))
-                        .padding(8)
-                        .background(.orange.opacity(0.8), in: Circle())
-                        .position(item.center)
+                    CounterBubbleView(
+                        id: item.id,
+                        text: item.displayValue ?? "",
+                        center: item.center,
+                        onTap: onCounterTap
+                    )
                 case .text:
                     Text(item.displayValue ?? "Text")
                         .position(item.center)
+                        .onTapGesture(count: 2) {
+                            onTextDoubleClick?(item.id)
+                        }
                 case .box:
-                    Rectangle()
-                        .stroke(.yellow, lineWidth: 2)
-                        .frame(width: 80, height: 50)
-                        .position(item.center)
+                    if let end = item.trailingPoint {
+                        boxPath(from: item.center, to: end)
+                            .stroke(.yellow, lineWidth: 2)
+                    } else {
+                        Rectangle()
+                            .stroke(.yellow, lineWidth: 2)
+                            .frame(width: 80, height: 50)
+                            .position(item.center)
+                    }
                 case .arrow:
-                    Image(systemName: "arrow.right")
-                        .foregroundStyle(.red)
-                        .position(item.center)
+                    if let end = item.trailingPoint {
+                        arrowPath(from: item.center, to: end)
+                            .stroke(.red, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    } else {
+                        Image(systemName: "arrow.right")
+                            .foregroundStyle(.red)
+                            .position(item.center)
+                    }
                 case .mosaic:
                     MosaicBlockView()
                         .frame(width: 92, height: 64)
                         .position(item.center)
+                case .floatingPin:
+                    Image(systemName: "pin.fill")
+                        .foregroundStyle(.pink)
+                        .font(.system(size: 22, weight: .bold))
+                        .position(item.center)
+                case .backdrop:
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.black.opacity(0.30))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(.white.opacity(0.65), lineWidth: 1.2)
+                        )
+                        .frame(width: 180, height: 110)
+                        .position(item.center)
                 }
             }
+        }
+    }
+
+    private func boxPath(from start: CGPoint, to end: CGPoint) -> Path {
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        var path = Path()
+        path.addRect(rect)
+        return path
+    }
+
+    private func arrowPath(from start: CGPoint, to end: CGPoint) -> Path {
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let headLength: CGFloat = 12
+        let left = CGPoint(
+            x: end.x - headLength * cos(angle - .pi / 6),
+            y: end.y - headLength * sin(angle - .pi / 6)
+        )
+        let right = CGPoint(
+            x: end.x - headLength * cos(angle + .pi / 6),
+            y: end.y - headLength * sin(angle + .pi / 6)
+        )
+        path.move(to: end)
+        path.addLine(to: left)
+        path.move(to: end)
+        path.addLine(to: right)
+        return path
+    }
+}
+
+private struct CounterBubbleView: View {
+    let id: UUID
+    let text: String
+    let center: CGPoint
+    let onTap: ((UUID) -> Void)?
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.red.opacity(0.92))
+                .frame(width: 30, height: 30)
+            Text(text)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .position(center)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?(id)
         }
     }
 }

@@ -9,7 +9,11 @@ final class GlobalHotkeyService {
 
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
-    private var hotKeyID = EventHotKeyID(signature: OSType(0x4C554D49), id: 1) // "LUMI"
+    private var hotKeyID: EventHotKeyID
+
+    init(id: UInt32) {
+        hotKeyID = EventHotKeyID(signature: OSType(0x4C554D49), id: id) // "LUMI"
+    }
 
     @discardableResult
     func register(shortcut: OCRShortcutConfiguration) -> Bool {

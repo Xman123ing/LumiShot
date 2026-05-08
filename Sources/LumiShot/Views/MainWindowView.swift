@@ -5,11 +5,12 @@ public struct MainWindowView: View {
     @StateObject private var viewModel = MainWorkflowViewModel.live()
     @State private var toastMessage: String?
     @State private var toastDismissToken = 0
-    @State private var selectedMode: CaptureMode = .fullScreen
-    @State private var regionX = "100"
-    @State private var regionY = "100"
-    @State private var regionWidth = "800"
-    @State private var regionHeight = "500"
+    @State private var captureRegionSelector = InteractiveCaptureRegionSelector()
+    @State private var activeDrawingTool: ToolbarTool?
+    @State private var textEditingState: TextInlineEditingState?
+    @State private var backdropEnabled = false
+    @State private var annotationUndoStack: [[AnnotationItem]] = []
+    @State private var movingAnnotationIDs: Set<UUID> = []
 
     public init() {}
 
@@ -28,64 +29,92 @@ public struct MainWindowView: View {
 
             VStack(spacing: 0) {
                 TopToolbarView(
-                    selectedMode: $selectedMode,
+                    activeTool: activeDrawingTool,
                     zoomText: "100%",
+                    onExtractOCR: {
+                        commitPendingTextEditingIfNeeded()
+                        NotificationCenter.default.post(name: LumiShotNotifications.triggerExtractOCR, object: nil)
+                        showToast("OCR selection started.")
+                    },
                     onCapture: {
+                        commitPendingTextEditingIfNeeded()
                         triggerCapture()
                     },
+                    onMove: {
+                        commitPendingTextEditingIfNeeded()
+                        activeDrawingTool = nil
+                        showToast("Move ready: hover an annotation and drag.")
+                    },
+                    onUndo: undoLastAnnotationChange,
                     onCopy: copyCurrentCaptureImage,
                     onSave: saveCurrentCaptureImage,
-                    onAddBox: {
-                        viewModel.addBoxAnnotation()
-                        showToast("Rectangle added.")
-                    },
-                    onAddArrow: {
-                        viewModel.addArrowAnnotation()
-                        showToast("Arrow added.")
-                    },
-                    onAddText: {
-                        viewModel.addTextAnnotation("Text")
-                        showToast("Text added.")
-                    },
-                    onAddNumber: {
-                        viewModel.addNumberAnnotation()
-                        showToast("Counter added.")
+                    onSelectPrimaryTool: { tool in
+                        commitPendingTextEditingIfNeeded()
+                        activeDrawingTool = activeDrawingTool == tool ? nil : tool
+                        if let activeDrawingTool {
+                            showToast("\(label(for: activeDrawingTool)) tool activated.")
+                        } else {
+                            showToast("Drawing tool deactivated.")
+                        }
                     },
                     onAddMosaic: {
+                        commitPendingTextEditingIfNeeded()
+                        pushUndoSnapshot()
                         viewModel.addMosaicAnnotation()
                         showToast("Mosaic added.")
                     },
                     onBackdrop: {
-                        showToast("Backdrop style selected.")
+                        backdropEnabled.toggle()
+                        showToast(backdropEnabled ? "Backdrop enabled." : "Backdrop disabled.")
                     },
                     onFloatingPin: {
-                        viewModel.addTextAnnotation("Pin")
-                        showToast("Floating pin added.")
+                        commitPendingTextEditingIfNeeded()
+                        guard viewModel.currentCapture != nil else {
+                            showToast("Nothing to pin.")
+                            return
+                        }
+                        FloatingPinService.shared.pin(image: viewModel.composedImage())
+                        showToast("Pinned capture to desktop.")
                     }
                 )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(.black.opacity(0.28))
 
-                if selectedMode == .region {
-                    HStack(spacing: 8) {
-                        Text("Region")
-                            .foregroundStyle(.white.opacity(0.72))
-                        regionField("x", value: $regionX)
-                        regionField("y", value: $regionY)
-                        regionField("w", value: $regionWidth)
-                        regionField("h", value: $regionHeight)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.black.opacity(0.18))
-                }
-
                 CanvasWorkspaceView(
                     items: viewModel.annotationStore.items,
                     hasCapture: viewModel.currentCapture != nil,
-                    captureImage: viewModel.currentCapture?.image
+                    captureImage: viewModel.currentCapture?.image,
+                    captureLogicalSize: viewModel.currentCapture?.logicalSize,
+                    activeTool: activeDrawingTool,
+                    backdropEnabled: backdropEnabled,
+                    onDrawRequest: { request in
+                        handleDrawRequest(request)
+                    },
+                    onTextDoubleClick: { annotationID in
+                        beginTextEditing(annotationID: annotationID)
+                    },
+                    textEditingState: textEditingState,
+                    onTextEditingStateChange: { state in
+                        textEditingState = state
+                    },
+                    onTextCommit: { state in
+                        pushUndoSnapshot()
+                        viewModel.updateTextAnnotation(id: state.annotationID, value: state.draftText)
+                        textEditingState = nil
+                        showToast("Text updated.")
+                    },
+                    onCounterTap: { _ in },
+                    onAnnotationMove: { annotationID, center, trailing, isFinal in
+                        if movingAnnotationIDs.contains(annotationID) == false {
+                            pushUndoSnapshot()
+                            movingAnnotationIDs.insert(annotationID)
+                        }
+                        viewModel.setAnnotationPosition(id: annotationID, center: center, trailingPoint: trailing)
+                        if isFinal {
+                            movingAnnotationIDs.remove(annotationID)
+                        }
+                    }
                 )
                     .padding(16)
             }
@@ -115,27 +144,11 @@ public struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.triggerSaveCapture)) { _ in
             saveCurrentCaptureImage()
         }
+        .onReceive(NotificationCenter.default.publisher(for: LumiShotNotifications.triggerUndoAnnotation)) { _ in
+            undoLastAnnotationChange()
+        }
         .preferredColorScheme(.dark)
         .fontDesign(.rounded)
-    }
-
-    private func regionRectForSelection() -> CGRect? {
-        guard selectedMode == .region else { return nil }
-        guard
-            let x = Double(regionX),
-            let y = Double(regionY),
-            let width = Double(regionWidth),
-            let height = Double(regionHeight)
-        else {
-            return nil
-        }
-        return CGRect(x: x, y: y, width: width, height: height)
-    }
-
-    private func regionField(_ label: String, value: Binding<String>) -> some View {
-        TextField(label, text: value)
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 82)
     }
 
     private func showToast(_ text: String) {
@@ -144,10 +157,11 @@ public struct MainWindowView: View {
     }
 
     private func copyCurrentCaptureImage() {
-        guard let image = viewModel.currentCapture?.image else {
+        guard viewModel.currentCapture != nil else {
             showToast("Nothing to copy.")
             return
         }
+        let image = composedImageForOutput()
         let size = NSSize(width: image.width, height: image.height)
         let nsImage = NSImage(cgImage: image, size: size)
         NSPasteboard.general.clearContents()
@@ -165,16 +179,150 @@ public struct MainWindowView: View {
     }
 
     private func triggerCapture() {
-        Task {
-            do {
-                try await viewModel.runCapture(
-                    mode: selectedMode,
-                    region: regionRectForSelection()
-                )
-                showToast("Capture completed.")
-            } catch {
-                showToast("Capture failed: \(error.localizedDescription)")
+        commitPendingTextEditingIfNeeded()
+        captureRegionSelector.beginSelection(
+            autoRestore: false,
+            bringLumiShotToFrontForOverlay: false
+        ) { selectionRect in
+            guard let selectionRect else {
+                captureRegionSelector.restoreWindowsIfNeeded()
+                showToast("Capture cancelled.")
+                return
             }
+            Task {
+                do {
+                    try await viewModel.runCapture(
+                        mode: .region,
+                        region: selectionRect
+                    )
+                    textEditingState = nil
+                    annotationUndoStack = []
+                    captureRegionSelector.restoreWindowsAndBringLumiShotFront()
+                    bringMainWindowToFront()
+                    showToast("Capture completed.")
+                } catch {
+                    captureRegionSelector.restoreWindowsIfNeeded()
+                    showToast("Capture failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    private func handleDrawRequest(_ request: AnnotationDrawRequest) {
+        if request.tool == .text {
+            commitPendingTextEditingIfNeeded()
+        }
+        pushUndoSnapshot()
+        switch request.tool {
+        case .rectangle:
+            viewModel.addBoxAnnotation(from: request.start, to: request.end)
+            showToast("Rectangle added.")
+        case .arrow:
+            viewModel.addArrowAnnotation(from: request.start, to: request.end)
+            showToast("Arrow added.")
+        case .text:
+            let item = viewModel.addTextAnnotation(at: request.end, value: "")
+            textEditingState = TextInlineEditingState(annotationID: item.id, draftText: item.displayValue ?? "")
+            showToast("Text added. Press Enter to finish editing.")
+        case .counter:
+            viewModel.addNumberAnnotation(at: request.end)
+            showToast("Counter added.")
+        case .floatingPin, .backdrop:
+            break
+        }
+    }
+
+    private func beginTextEditing(annotationID: UUID) {
+        if textEditingState?.annotationID != annotationID {
+            commitPendingTextEditingIfNeeded()
+        }
+        guard let item = viewModel.annotationStore.item(id: annotationID), item.kind == .text else { return }
+        textEditingState = TextInlineEditingState(
+            annotationID: annotationID,
+            draftText: item.displayValue ?? ""
+        )
+    }
+
+    private func commitPendingTextEditingIfNeeded() {
+        guard let state = textEditingState else { return }
+        pushUndoSnapshot()
+        viewModel.updateTextAnnotation(id: state.annotationID, value: state.draftText)
+        textEditingState = nil
+    }
+
+    private func pushUndoSnapshot() {
+        let current = viewModel.annotationStore.items
+        if annotationUndoStack.last == current {
+            return
+        }
+        annotationUndoStack.append(current)
+        if annotationUndoStack.count > 50 {
+            annotationUndoStack.removeFirst(annotationUndoStack.count - 50)
+        }
+    }
+
+    private func undoLastAnnotationChange() {
+        guard let last = annotationUndoStack.popLast() else {
+            showToast("Nothing to undo.")
+            return
+        }
+        textEditingState = nil
+        movingAnnotationIDs = []
+        viewModel.replaceAnnotations(with: last)
+        showToast("Undo applied.")
+    }
+
+    private func bringMainWindowToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.forEach { $0.makeKeyAndOrderFront(nil) }
+    }
+
+    private func composedImageForOutput() -> CGImage {
+        let composed = viewModel.composedImage()
+        guard backdropEnabled else { return composed }
+        return renderBackdropFrame(for: composed)
+    }
+
+    private func renderBackdropFrame(for image: CGImage) -> CGImage {
+        let padding: CGFloat = 24
+        let width = Int(CGFloat(image.width) + padding * 2)
+        let height = Int(CGFloat(image.height) + padding * 2)
+        guard
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return image
+        }
+        let cardRect = CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))
+        context.setFillColor(CGColor(red: 0.20, green: 0.20, blue: 0.22, alpha: 0.42))
+        context.fill(cardRect)
+        context.draw(
+            image,
+            in: CGRect(
+                x: padding,
+                y: padding,
+                width: CGFloat(image.width),
+                height: CGFloat(image.height)
+            )
+        )
+        return context.makeImage() ?? image
+    }
+
+    private func label(for tool: ToolbarTool) -> String {
+        switch tool {
+        case .rectangle: "Rectangle"
+        case .arrow: "Arrow"
+        case .text: "Text"
+        case .counter: "Counter"
+        case .floatingPin: "Floating Pin"
+        case .backdrop: "Backdrop"
         }
     }
 

@@ -4,21 +4,26 @@ import LumiShotKit
 
 @MainActor
 final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
-    private let hotkeyService = GlobalHotkeyService()
     private let regionOCRCoordinator = RegionOCRCoordinator()
     private var userDefaultsObserver: NSObjectProtocol?
     private var triggerObserver: NSObjectProtocol?
-    private var lastRegisteredOCRShortcut: OCRShortcutConfiguration?
+    private var hotkeyServices: [AppShortcutAction: GlobalHotkeyService] = [:]
+    private var lastRegisteredShortcuts: [AppShortcutAction: OCRShortcutConfiguration] = [:]
+    private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
+    private let globalHotkeyActions: Set<AppShortcutAction> = [.capture, .extractOCR]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        registerShortcutFromSettings()
+        setupStatusItem()
+        setupHotkeyServices()
+        registerShortcutsFromSettings()
         userDefaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.registerShortcutFromSettings()
+                self?.registerShortcutsFromSettings()
             }
         }
         triggerObserver = NotificationCenter.default.addObserver(
@@ -27,11 +32,6 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.regionOCRCoordinator.beginSelection()
-            }
-        }
-        hotkeyService.onHotkeyPressed = { [weak self] in
-            Task { @MainActor [weak self] in
                 self?.regionOCRCoordinator.beginSelection()
             }
         }
@@ -44,16 +44,101 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         if let triggerObserver {
             NotificationCenter.default.removeObserver(triggerObserver)
         }
-        hotkeyService.unregister()
+        for service in hotkeyServices.values {
+            service.unregister()
+        }
     }
 
-    private func registerShortcutFromSettings() {
-        let shortcut = OCRShortcutConfiguration.load()
-        guard shortcut != lastRegisteredOCRShortcut else { return }
-        if hotkeyService.register(shortcut: shortcut) {
-            lastRegisteredOCRShortcut = shortcut
+    private func setupStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open App", action: #selector(openMainAppWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+        menu.items.forEach { $0.target = self }
+        if let button = item.button {
+            let appIcon = NSApp.applicationIconImage.copy() as? NSImage
+            appIcon?.size = NSSize(width: 18, height: 18)
+            appIcon?.isTemplate = false
+            button.image = appIcon
+            button.action = #selector(handleStatusItemClick(_:))
+            button.target = self
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        statusItem = item
+        statusMenu = menu
+    }
+
+    @objc
+    private func handleStatusItemClick(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent else {
+            openMainAppWindow()
+            return
+        }
+        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
+            if let statusMenu, let statusItem {
+                statusItem.menu = statusMenu
+                statusItem.button?.performClick(nil)
+                statusItem.menu = nil
+            }
         } else {
-            lastRegisteredOCRShortcut = nil
+            openMainAppWindow()
+        }
+    }
+
+    @objc
+    private func openMainAppWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.windows.forEach { $0.makeKeyAndOrderFront(nil) }
+    }
+
+    @objc
+    private func quitApp() {
+        NSApp.terminate(nil)
+    }
+
+    private func setupHotkeyServices() {
+        var idSeed: UInt32 = 1
+        for action in AppShortcutAction.allCases where globalHotkeyActions.contains(action) {
+            let service = GlobalHotkeyService(id: idSeed)
+            idSeed += 1
+            service.onHotkeyPressed = { [weak self] in
+                Task { @MainActor in
+                    self?.dispatchHotkeyAction(action)
+                }
+            }
+            hotkeyServices[action] = service
+        }
+    }
+
+    private func dispatchHotkeyAction(_ action: AppShortcutAction) {
+        if action == .extractOCR || action == .capture {
+            NotificationCenter.default.post(name: action.triggerNotification, object: nil)
+            return
+        }
+        openMainAppWindow()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NotificationCenter.default.post(name: action.triggerNotification, object: nil)
+        }
+    }
+
+    private func registerShortcutsFromSettings() {
+        for action in AppShortcutAction.allCases {
+            guard globalHotkeyActions.contains(action) else {
+                hotkeyServices[action]?.unregister()
+                lastRegisteredShortcuts[action] = nil
+                continue
+            }
+            let shortcut = AppShortcutStore.load(action).configuration
+            if lastRegisteredShortcuts[action] == shortcut {
+                continue
+            }
+            guard let service = hotkeyServices[action] else { continue }
+            if service.register(shortcut: shortcut) {
+                lastRegisteredShortcuts[action] = shortcut
+            } else {
+                lastRegisteredShortcuts[action] = nil
+            }
         }
     }
 }
@@ -83,19 +168,11 @@ private final class RegionOCRCoordinator {
     }
 
     private func performOCR(for rect: CGRect, onFinished: @escaping @MainActor () -> Void) {
-        guard rect.width > 8, rect.height > 8 else {
+        let selectedRegion = rect.standardized
+        guard selectedRegion.width > 8, selectedRegion.height > 8 else {
             onFinished()
             return
         }
-        let desktopFrame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { partial, next in
-            partial.union(next)
-        }
-        let normalizedRect = CGRect(
-            x: rect.origin.x,
-            y: desktopFrame.maxY - rect.maxY,
-            width: rect.width,
-            height: rect.height
-        ).integral
 
         let engine = ocrEngine
         Task { [engine] in
@@ -106,16 +183,14 @@ private final class RegionOCRCoordinator {
             }
             // Wait a frame so the overlay window fully disappears before capture.
             try? await Task.sleep(for: .milliseconds(120))
-            guard let image = CGWindowListCreateImage(
-                normalizedRect,
-                .optionOnScreenOnly,
-                kCGNullWindowID,
-                [.bestResolution]
-            ) else { return }
-            let result = try? await engine.recognize(image: image, languageHints: ["zh-Hans", "en-US"])
-            let text = result?.text ?? ""
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
+            guard let image = CaptureService.defaultRegionImageProvider(region: selectedRegion) else { return }
+            let primaryResult = try? await engine.recognize(image: image, languageHints: ["zh-Hans", "en-US"])
+            let fallbackResult = try? await engine.recognize(image: image, languageHints: [])
+            let text = (primaryResult?.text ?? fallbackResult?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty == false {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
             NotificationCenter.default.post(
                 name: LumiShotNotifications.didExtractOCRText,
                 object: nil,

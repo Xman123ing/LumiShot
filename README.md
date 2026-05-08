@@ -26,6 +26,12 @@ chmod +x Scripts/package_dmg.sh
 ./Scripts/package_dmg.sh
 ```
 
+If you already have a signing certificate, you can provide it for better macOS permission persistence across reinstall:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/package_dmg.sh
+```
+
 Output:
 
 - `release/LumiShot.dmg`

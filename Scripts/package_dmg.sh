@@ -9,6 +9,8 @@ BIN_NAME="LumiShot"
 DMG_NAME="LumiShot.dmg"
 APP_BUNDLE_ID="com.lumishot.app"
 ICON_SOURCE="${PROJECT_ROOT}/Assets/LumiShot.icns"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+SIGNING_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 mkdir -p "${RELEASE_DIR}"
 
@@ -26,11 +28,11 @@ BIN_PATH="$(/usr/bin/find "${BUILD_DIR}" -path "*Release/${BIN_NAME}" -type f -p
 STAGE_DIR="${RELEASE_DIR}/dmg-stage"
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}"
+BUNDLE_DIR="${STAGE_DIR}/${APP_NAME}"
 
 if [[ -n "${APP_PATH}" ]]; then
-  cp -R "${APP_PATH}" "${STAGE_DIR}/${APP_NAME}"
+  cp -R "${APP_PATH}" "${BUNDLE_DIR}"
 elif [[ -n "${BIN_PATH}" ]]; then
-  BUNDLE_DIR="${STAGE_DIR}/${APP_NAME}"
   mkdir -p "${BUNDLE_DIR}/Contents/MacOS" "${BUNDLE_DIR}/Contents/Resources"
   cp "${BIN_PATH}" "${BUNDLE_DIR}/Contents/MacOS/LumiShot"
   chmod +x "${BUNDLE_DIR}/Contents/MacOS/LumiShot"
@@ -83,6 +85,34 @@ else
   echo "Release app or executable not found."
   exit 1
 fi
+
+PLIST_PATH="${BUNDLE_DIR}/Contents/Info.plist"
+if [[ ! -f "${PLIST_PATH}" ]]; then
+  echo "Info.plist not found at ${PLIST_PATH}"
+  exit 1
+fi
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${APP_BUNDLE_ID}" "${PLIST_PATH}" || \
+  /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string ${APP_BUNDLE_ID}" "${PLIST_PATH}"
+
+if [[ -f "${ICON_SOURCE}" ]]; then
+  cp "${ICON_SOURCE}" "${BUNDLE_DIR}/Contents/Resources/LumiShot.icns"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile LumiShot" "${PLIST_PATH}" || \
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string LumiShot" "${PLIST_PATH}"
+fi
+
+if [[ "${SIGNING_IDENTITY}" == "-" ]]; then
+  cat <<'EOF'
+Warning: CODESIGN_IDENTITY is not set. Falling back to ad-hoc signing (-).
+This build can be installed and run, but macOS may treat reinstall as a new app and ask for screen/audio permissions again.
+For better permission persistence, package with a stable identity:
+  CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./Scripts/package_dmg.sh
+EOF
+fi
+
+echo "Signing app with identity: ${SIGNING_IDENTITY}"
+codesign --force --deep --sign "${SIGNING_IDENTITY}" "${BUNDLE_DIR}"
+codesign --verify --deep --strict "${BUNDLE_DIR}"
 
 ln -s /Applications "${STAGE_DIR}/Applications"
 

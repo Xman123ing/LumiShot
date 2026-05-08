@@ -3,12 +3,13 @@ import LumiShotKit
 import SwiftUI
 
 struct OCRShortcutSettingsView: View {
+    private static let configurableActions: [AppShortcutAction] = [.capture, .extractOCR]
     @State private var recordingAction: AppShortcutAction?
     @State private var isRecording = false
     @State private var localMonitor: Any?
     @State private var shortcuts: [AppShortcutAction: AppShortcutRecord] = {
         var map: [AppShortcutAction: AppShortcutRecord] = [:]
-        for action in AppShortcutAction.allCases {
+        for action in Self.configurableActions {
             map[action] = AppShortcutStore.load(action)
         }
         return map
@@ -25,7 +26,7 @@ struct OCRShortcutSettingsView: View {
 
             List {
                 Section("Shortcut Module") {
-                    ForEach(AppShortcutAction.allCases, id: \.self) { action in
+                    ForEach(Self.configurableActions, id: \.self) { action in
                         Button {
                             startRecording(for: action)
                         } label: {
@@ -128,7 +129,7 @@ struct OCRShortcutSettingsView: View {
     }
 
     private func resetToDefault() {
-        for action in AppShortcutAction.allCases {
+        for action in Self.configurableActions {
             let d = action.defaults
             let record = AppShortcutRecord(
                 key: d.key,

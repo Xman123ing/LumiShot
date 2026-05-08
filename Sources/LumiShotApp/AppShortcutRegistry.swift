@@ -16,6 +16,19 @@ enum AppShortcutAction: CaseIterable {
         }
     }
 
+    var triggerNotification: Notification.Name {
+        switch self {
+        case .capture:
+            return LumiShotNotifications.triggerCapture
+        case .copy:
+            return LumiShotNotifications.triggerCopyCapture
+        case .save:
+            return LumiShotNotifications.triggerSaveCapture
+        case .extractOCR:
+            return LumiShotNotifications.triggerExtractOCR
+        }
+    }
+
     var defaults: (key: String, useCommand: Bool, useShift: Bool, useOption: Bool, useControl: Bool) {
         switch self {
         case .capture:
