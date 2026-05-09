@@ -18,8 +18,7 @@ final class SelectionOverlayWindowController: NSWindowController {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.ignoresMouseEvents = false
-        // .canJoinAllSpaces conflicts with .moveToActiveSpace and triggers AppKit assertion.
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hasShadow = false
 
         super.init(window: window)
