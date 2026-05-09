@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var recordingAction: AppShortcutAction?
     @State private var isRecording = false
     @State private var localMonitor: Any?
+    @AppStorage(AppAppearanceMode.defaultsKey) private var appearanceModeRawValue = AppAppearanceMode.auto.rawValue
     @State private var shortcuts: [AppShortcutAction: AppShortcutRecord] = {
         var map: [AppShortcutAction: AppShortcutRecord] = [:]
         for action in Self.configurableActions {
@@ -24,6 +25,19 @@ struct SettingsView: View {
                 .padding(.top, 8)
 
             List {
+                Section("Appearance") {
+                    Picker("Theme", selection: $appearanceModeRawValue) {
+                        ForEach(AppAppearanceMode.allCases) { mode in
+                            Text(mode.displayTitle).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("Auto follows the current macOS Light/Dark appearance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Shortcut Module") {
                     ForEach(Self.configurableActions, id: \.self) { action in
                         Button {
@@ -66,6 +80,13 @@ struct SettingsView: View {
         .frame(width: 420, height: 340)
         .onDisappear {
             stopRecording()
+        }
+        .onAppear {
+            AppAppearanceManager.applyCurrent()
+        }
+        .onChange(of: appearanceModeRawValue) { _, newValue in
+            let mode = AppAppearanceMode(rawValue: newValue) ?? .auto
+            AppAppearanceManager.apply(mode: mode)
         }
     }
 

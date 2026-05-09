@@ -16,6 +16,7 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         logToDownloads("applicationDidFinishLaunching started")
+        AppAppearanceManager.applyCurrent()
         setupStatusItem()
         setupHotkeyServices()
         registerShortcutsFromSettings()
