@@ -88,7 +88,12 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "LumiShot")
+            let appIcon = NSApp.applicationIconImage.copy() as? NSImage
+            appIcon?.size = NSSize(width: 18, height: 18)
+            appIcon?.isTemplate = false
+            button.image = appIcon
+            button.imagePosition = .imageOnly
+            button.toolTip = "LumiShot"
         }
         let menu = NSMenu()
         let openItem = NSMenuItem(title: "Open App", action: #selector(openMainAppWindow), keyEquivalent: "")
