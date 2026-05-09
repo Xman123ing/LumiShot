@@ -18,7 +18,8 @@ final class SelectionOverlayWindowController: NSWindowController {
         window.backgroundColor = .clear
         window.isOpaque = false
         window.ignoresMouseEvents = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // .canJoinAllSpaces conflicts with .moveToActiveSpace and triggers AppKit assertion.
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.hasShadow = false
 
         super.init(window: window)
@@ -37,6 +38,7 @@ final class SelectionOverlayWindowController: NSWindowController {
     }
 
     func show() {
+        window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

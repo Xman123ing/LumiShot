@@ -18,7 +18,8 @@ let package = Package(
         .executableTarget(
             name: "LumiShot",
             dependencies: ["LumiShotKit"],
-            path: "Sources/LumiShotApp"
+            path: "Sources/LumiShotApp",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "LumiShotTests",

@@ -32,34 +32,46 @@ public final class MainWorkflowViewModel: ObservableObject {
         diagnostics.captureStatus = "success:\(mode.rawValue)"
     }
 
-    public func addNumberAnnotation() {
+    public func addNumberAnnotation(color: AnnotationColor? = nil, strokeWidth: Double? = nil) {
         objectWillChange.send()
-        _ = annotationStore.addNumber(at: CGPoint(x: 40, y: 40))
+        _ = annotationStore.addNumber(at: CGPoint(x: 40, y: 40), color: color, strokeWidth: strokeWidth)
     }
 
-    public func addTextAnnotation(_ value: String = "Text") {
+    public func addTextAnnotation(_ value: String = "Text", color: AnnotationColor? = nil) {
         objectWillChange.send()
-        _ = annotationStore.addText(value, at: CGPoint(x: 90, y: 60))
+        _ = annotationStore.addText(value, at: CGPoint(x: 90, y: 60), color: color)
     }
 
-    public func addBoxAnnotation() {
+    public func addBoxAnnotation(color: AnnotationColor? = nil) {
         objectWillChange.send()
-        _ = annotationStore.addBox(at: CGPoint(x: 160, y: 90))
+        _ = annotationStore.addBox(at: CGPoint(x: 160, y: 90), color: color)
     }
 
-    public func addBoxAnnotation(from start: CGPoint, to end: CGPoint) {
+    @discardableResult
+    public func addBoxAnnotation(
+        from start: CGPoint,
+        to end: CGPoint,
+        color: AnnotationColor? = nil,
+        strokeWidth: Double? = nil
+    ) -> AnnotationItem {
         objectWillChange.send()
-        _ = annotationStore.addBox(from: start, to: end)
+        return annotationStore.addBox(from: start, to: end, color: color, strokeWidth: strokeWidth)
     }
 
-    public func addArrowAnnotation() {
+    public func addArrowAnnotation(color: AnnotationColor? = nil) {
         objectWillChange.send()
-        _ = annotationStore.addArrow(at: CGPoint(x: 210, y: 120))
+        _ = annotationStore.addArrow(at: CGPoint(x: 210, y: 120), color: color)
     }
 
-    public func addArrowAnnotation(from start: CGPoint, to end: CGPoint) {
+    @discardableResult
+    public func addArrowAnnotation(
+        from start: CGPoint,
+        to end: CGPoint,
+        color: AnnotationColor? = nil,
+        strokeWidth: Double? = nil
+    ) -> AnnotationItem {
         objectWillChange.send()
-        _ = annotationStore.addArrow(from: start, to: end)
+        return annotationStore.addArrow(from: start, to: end, color: color, strokeWidth: strokeWidth)
     }
 
     public func addMosaicAnnotation() {
@@ -72,20 +84,31 @@ public final class MainWorkflowViewModel: ObservableObject {
         _ = annotationStore.addFloatingPin(at: CGPoint(x: 220, y: 120))
     }
 
-    public func addBackdropAnnotation() {
+    public func addBackdropAnnotation(color: AnnotationColor? = nil) {
         objectWillChange.send()
-        _ = annotationStore.addBackdrop(at: CGPoint(x: 260, y: 170))
+        _ = annotationStore.addBackdrop(at: CGPoint(x: 260, y: 170), color: color)
     }
 
     @discardableResult
-    public func addTextAnnotation(at point: CGPoint, value: String = "Text") -> AnnotationItem {
+    public func addTextAnnotation(
+        at point: CGPoint,
+        value: String = "Text",
+        color: AnnotationColor? = nil,
+        fontSize: Double? = nil
+    ) -> AnnotationItem {
         objectWillChange.send()
-        return annotationStore.addText(value, at: point)
+        return annotationStore.addText(value, at: point, color: color, fontSize: fontSize)
     }
 
-    public func addNumberAnnotation(at point: CGPoint, tailPoint: CGPoint? = nil) {
+    @discardableResult
+    public func addNumberAnnotation(
+        at point: CGPoint,
+        tailPoint: CGPoint? = nil,
+        color: AnnotationColor? = nil,
+        strokeWidth: Double? = nil
+    ) -> AnnotationItem {
         objectWillChange.send()
-        _ = annotationStore.addNumber(at: point, tailPoint: tailPoint)
+        return annotationStore.addNumber(at: point, tailPoint: tailPoint, color: color, strokeWidth: strokeWidth)
     }
 
     public func updateTextAnnotation(id: UUID, value: String) {
@@ -93,9 +116,24 @@ public final class MainWorkflowViewModel: ObservableObject {
         annotationStore.updateText(id: id, value: value)
     }
 
+    public func updateNumberAnnotation(id: UUID, value: String) {
+        objectWillChange.send()
+        annotationStore.updateNumber(id: id, value: value)
+    }
+
     public func updateAnnotationTail(id: UUID, point: CGPoint) {
         objectWillChange.send()
         annotationStore.updateTrailingPoint(id: id, point: point)
+    }
+
+    public func updateAnnotationStyle(
+        id: UUID,
+        color: AnnotationColor? = nil,
+        strokeWidth: Double? = nil,
+        fontSize: Double? = nil
+    ) {
+        objectWillChange.send()
+        annotationStore.updateStyle(id: id, color: color, strokeWidth: strokeWidth, fontSize: fontSize)
     }
 
     public func moveAnnotation(id: UUID, delta: CGPoint) {
@@ -111,6 +149,11 @@ public final class MainWorkflowViewModel: ObservableObject {
     public func replaceAnnotations(with items: [AnnotationItem]) {
         objectWillChange.send()
         annotationStore.replaceAll(with: items)
+    }
+
+    public func removeAnnotation(id: UUID) {
+        objectWillChange.send()
+        annotationStore.removeItem(id: id)
     }
 
     public func extractTextFromCurrentAsset() async throws {

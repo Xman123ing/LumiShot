@@ -2,9 +2,10 @@ import SwiftUI
 
 struct TopToolbarView: View {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.colorScheme) private var colorScheme
 
     let activeTool: ToolbarTool?
-    let zoomText: String
+    let zoomLevel: Double
 
     let onExtractOCR: () -> Void
     let onCapture: () -> Void
@@ -16,8 +17,10 @@ struct TopToolbarView: View {
     let onAddMosaic: () -> Void
     let onBackdrop: () -> Void
     let onFloatingPin: () -> Void
+    let onSelectZoom: (Double) -> Void
     private let toolbarIconSize: CGFloat = 13
     private let toolbarButtonWidth: CGFloat = 30
+    private let zoomLevels: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
     var body: some View {
         HStack(spacing: 8) {
@@ -62,11 +65,29 @@ struct TopToolbarView: View {
             .buttonStyle(.bordered)
             .help("Save")
 
-            Text(zoomText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.72))
-                .monospacedDigit()
-                .help("Zoom")
+            Menu {
+                ForEach(zoomLevels, id: \.self) { level in
+                    Button(action: { onSelectZoom(level) }) {
+                        if abs(level - zoomLevel) < 0.001 {
+                            Label("\(Int(level * 100))%", systemImage: "checkmark")
+                        } else {
+                            Text("\(Int(level * 100))%")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("\(Int(zoomLevel * 100))%")
+                        .font(.system(size: 12, weight: .medium))
+                        .monospacedDigit()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .frame(minWidth: 62)
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.bordered)
+            .help("Zoom")
         }
     }
 
@@ -83,7 +104,9 @@ struct TopToolbarView: View {
     private var toolbarDivider: some View {
         Divider()
             .frame(height: 20)
-            .overlay(.white.opacity(0.2))
+            .overlay(
+                colorScheme == .dark ? Color.white.opacity(0.2) : Color.black.opacity(0.16)
+            )
     }
 
     @ViewBuilder

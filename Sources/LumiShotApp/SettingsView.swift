@@ -1,8 +1,7 @@
-import AppKit
 import LumiShotKit
 import SwiftUI
 
-struct OCRShortcutSettingsView: View {
+struct SettingsView: View {
     private static let configurableActions: [AppShortcutAction] = [.capture, .extractOCR]
     @State private var recordingAction: AppShortcutAction?
     @State private var isRecording = false
@@ -14,12 +13,12 @@ struct OCRShortcutSettingsView: View {
         }
         return map
     }()
-
+    
     private static let recorderModifierMask: NSEvent.ModifierFlags = [.command, .shift, .option, .control]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Shortcuts")
+            Text("Settings")
                 .font(.title3.weight(.semibold))
                 .padding(.horizontal)
                 .padding(.top, 8)
@@ -64,7 +63,7 @@ struct OCRShortcutSettingsView: View {
             .padding(.horizontal)
             .padding(.bottom, 12)
         }
-        .frame(width: 420, height: 280)
+        .frame(width: 420, height: 340)
         .onDisappear {
             stopRecording()
         }

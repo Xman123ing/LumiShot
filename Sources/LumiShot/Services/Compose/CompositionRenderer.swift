@@ -28,74 +28,88 @@ public struct CompositionRenderer {
     }
 
     private func draw(item: AnnotationItem, in context: CGContext) {
+        let canvasHeight = CGFloat(context.height)
         switch item.kind {
         case .text:
             let value = (item.displayValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard value.isEmpty == false else { break }
+            let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
             drawCenteredText(
                 value,
-                at: item.center,
+                at: center,
                 in: context,
-                fontSize: 24,
+                fontSize: CGFloat(item.fontSize ?? 24),
                 fontName: "HelveticaNeue-Medium",
-                color: CGColor(red: 1, green: 1, blue: 1, alpha: 0.96)
+                color: item.color?.cgColor ?? AnnotationColor.defaultColor(for: .text).cgColor
             )
         case .box:
-            context.setStrokeColor(CGColor(red: 0.98, green: 0.86, blue: 0.20, alpha: 0.95))
-            context.setLineWidth(3)
+            context.setStrokeColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .rectangle).cgColor)
+            context.setLineWidth(CGFloat(item.strokeWidth ?? 3))
             if let end = item.trailingPoint {
+                let startQuartz = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+                let endQuartz = quartzPoint(fromTopLeft: end, canvasHeight: canvasHeight)
                 context.stroke(CGRect(
-                    x: min(item.center.x, end.x),
-                    y: min(item.center.y, end.y),
-                    width: abs(end.x - item.center.x),
-                    height: abs(end.y - item.center.y)
+                    x: min(startQuartz.x, endQuartz.x),
+                    y: min(startQuartz.y, endQuartz.y),
+                    width: abs(endQuartz.x - startQuartz.x),
+                    height: abs(endQuartz.y - startQuartz.y)
                 ))
             } else {
-                context.stroke(CGRect(x: item.center.x - 45, y: item.center.y - 30, width: 90, height: 60))
+                let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+                context.stroke(CGRect(x: center.x - 45, y: center.y - 30, width: 90, height: 60))
             }
         case .arrow:
-            context.setStrokeColor(CGColor(red: 0.95, green: 0.25, blue: 0.25, alpha: 0.95))
-            context.setLineWidth(4)
+            context.setStrokeColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .arrow).cgColor)
+            context.setLineWidth(CGFloat(item.strokeWidth ?? 4))
             if let end = item.trailingPoint {
-                context.move(to: item.center)
-                context.addLine(to: end)
+                let startQuartz = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+                let endQuartz = quartzPoint(fromTopLeft: end, canvasHeight: canvasHeight)
+                context.move(to: startQuartz)
+                context.addLine(to: endQuartz)
                 context.strokePath()
-                let angle = atan2(end.y - item.center.y, end.x - item.center.x)
+                let angle = atan2(endQuartz.y - startQuartz.y, endQuartz.x - startQuartz.x)
                 let headLength: CGFloat = 16
                 let left = CGPoint(
-                    x: end.x - headLength * cos(angle - .pi / 6),
-                    y: end.y - headLength * sin(angle - .pi / 6)
+                    x: endQuartz.x - headLength * cos(angle - .pi / 6),
+                    y: endQuartz.y - headLength * sin(angle - .pi / 6)
                 )
                 let right = CGPoint(
-                    x: end.x - headLength * cos(angle + .pi / 6),
-                    y: end.y - headLength * sin(angle + .pi / 6)
+                    x: endQuartz.x - headLength * cos(angle + .pi / 6),
+                    y: endQuartz.y - headLength * sin(angle + .pi / 6)
                 )
-                context.move(to: end)
+                context.move(to: endQuartz)
                 context.addLine(to: left)
-                context.move(to: end)
+                context.move(to: endQuartz)
                 context.addLine(to: right)
                 context.strokePath()
             } else {
-                context.move(to: CGPoint(x: item.center.x - 35, y: item.center.y - 20))
-                context.addLine(to: CGPoint(x: item.center.x + 25, y: item.center.y + 20))
+                let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+                context.move(to: CGPoint(x: center.x - 35, y: center.y - 20))
+                context.addLine(to: CGPoint(x: center.x + 25, y: center.y + 20))
                 context.strokePath()
-                context.setFillColor(CGColor(red: 0.95, green: 0.25, blue: 0.25, alpha: 0.95))
+                context.setFillColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .arrow).cgColor)
                 context.beginPath()
-                context.move(to: CGPoint(x: item.center.x + 35, y: item.center.y + 24))
-                context.addLine(to: CGPoint(x: item.center.x + 16, y: item.center.y + 17))
-                context.addLine(to: CGPoint(x: item.center.x + 27, y: item.center.y + 4))
+                context.move(to: CGPoint(x: center.x + 35, y: center.y + 24))
+                context.addLine(to: CGPoint(x: center.x + 16, y: center.y + 17))
+                context.addLine(to: CGPoint(x: center.x + 27, y: center.y + 4))
                 context.closePath()
                 context.fillPath()
             }
         case .number:
-            let bubbleRect = CGRect(x: item.center.x - 14, y: item.center.y - 14, width: 28, height: 28)
-            context.setFillColor(CGColor(red: 0.97, green: 0.20, blue: 0.16, alpha: 0.95))
+            let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+            let bubbleRect = CGRect(x: center.x - 14, y: center.y - 14, width: 28, height: 28)
+            context.setFillColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .counter).cgColor)
             context.fillEllipse(in: bubbleRect)
+            if let stroke = item.strokeWidth, stroke > 0 {
+                context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.82))
+                context.setLineWidth(CGFloat(stroke))
+                context.strokeEllipse(in: bubbleRect.insetBy(dx: CGFloat(stroke) / 2, dy: CGFloat(stroke) / 2))
+            }
             let value = (item.displayValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if value.isEmpty == false {
                 drawCenteredText(
                     value,
-                    at: item.center,
+                    at: center,
                     in: context,
                     fontSize: 14,
                     fontName: "HelveticaNeue-Bold",
@@ -103,7 +117,8 @@ public struct CompositionRenderer {
                 )
             }
         case .mosaic:
-            let area = CGRect(x: item.center.x - 46, y: item.center.y - 32, width: 92, height: 64)
+            let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+            let area = CGRect(x: center.x - 46, y: center.y - 32, width: 92, height: 64)
             let tile: CGFloat = 8
             var row = 0
             var y = area.minY
@@ -134,22 +149,28 @@ public struct CompositionRenderer {
             context.setLineWidth(1.5)
             context.stroke(area)
         case .floatingPin:
+            let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
             context.setFillColor(CGColor(red: 0.93, green: 0.33, blue: 0.56, alpha: 0.95))
-            context.fillEllipse(in: CGRect(x: item.center.x - 9, y: item.center.y - 9, width: 18, height: 18))
+            context.fillEllipse(in: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18))
             context.beginPath()
-            context.move(to: CGPoint(x: item.center.x, y: item.center.y - 10))
-            context.addLine(to: CGPoint(x: item.center.x - 5, y: item.center.y - 22))
-            context.addLine(to: CGPoint(x: item.center.x + 5, y: item.center.y - 22))
+            context.move(to: CGPoint(x: center.x, y: center.y - 10))
+            context.addLine(to: CGPoint(x: center.x - 5, y: center.y - 22))
+            context.addLine(to: CGPoint(x: center.x + 5, y: center.y - 22))
             context.closePath()
             context.fillPath()
         case .backdrop:
-            let rect = CGRect(x: item.center.x - 90, y: item.center.y - 55, width: 180, height: 110)
-            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.30))
+            let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
+            let rect = CGRect(x: center.x - 90, y: center.y - 55, width: 180, height: 110)
+            context.setFillColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .backdrop).cgColor)
             context.fill(rect)
             context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.65))
-            context.setLineWidth(1.5)
+            context.setLineWidth(CGFloat(item.strokeWidth ?? 1.5))
             context.stroke(rect)
         }
+    }
+
+    private func quartzPoint(fromTopLeft point: CGPoint, canvasHeight: CGFloat) -> CGPoint {
+        CGPoint(x: point.x, y: canvasHeight - point.y)
     }
 
     private func drawCenteredText(

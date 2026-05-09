@@ -41,7 +41,7 @@ struct LumiShotAppMain: App {
         }
 
         Settings {
-            OCRShortcutSettingsView()
+            SettingsView()
         }
     }
 }

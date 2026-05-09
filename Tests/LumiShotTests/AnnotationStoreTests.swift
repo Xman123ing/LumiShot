@@ -32,4 +32,17 @@ final class AnnotationStoreTests: XCTestCase {
         sut.updateText(id: textItem.id, value: "updated")
         XCTAssertEqual(sut.item(id: textItem.id)?.displayValue, "updated")
     }
+
+    func testRemoveItemRemovesOnlyMatchingAnnotation() {
+        let sut = AnnotationStore()
+        let first = sut.addBox(at: CGPoint(x: 40, y: 50))
+        let second = sut.addArrow(at: CGPoint(x: 80, y: 90))
+
+        sut.removeItem(id: first.id)
+
+        XCTAssertNil(sut.item(id: first.id))
+        XCTAssertNotNil(sut.item(id: second.id))
+        XCTAssertEqual(sut.items.count, 1)
+    }
+
 }

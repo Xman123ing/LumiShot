@@ -3,6 +3,24 @@ import XCTest
 @testable import LumiShotKit
 
 final class CaptureDefaultRegionResolverTests: XCTestCase {
+    func testOverlayCoordinateMapperMapsGlobalRectToLocalWhenOverlayOriginIsOffset() {
+        let overlayFrame = CGRect(x: -1512, y: -180, width: 2952, height: 1080)
+        let globalRect = CGRect(x: -1300, y: 120, width: 400, height: 260)
+
+        let localRect = CaptureOverlayCoordinateMapper.toLocal(globalRect, in: overlayFrame)
+
+        XCTAssertEqual(localRect, CGRect(x: 212, y: 300, width: 400, height: 260))
+    }
+
+    func testOverlayCoordinateMapperMapsLocalRectBackToGlobalWhenOverlayOriginIsOffset() {
+        let overlayFrame = CGRect(x: -1512, y: -180, width: 2952, height: 1080)
+        let localRect = CGRect(x: 212, y: 300, width: 400, height: 260)
+
+        let globalRect = CaptureOverlayCoordinateMapper.toGlobal(localRect, in: overlayFrame)
+
+        XCTAssertEqual(globalRect, CGRect(x: -1300, y: 120, width: 400, height: 260))
+    }
+
     func testPrefersFrontMostWindowUnderPointer() {
         let windows = [
             CaptureWindowSnapshot(frame: CGRect(x: 90, y: 90, width: 300, height: 200), ownerPID: 200, layer: 0, alpha: 1),
@@ -15,6 +33,25 @@ final class CaptureDefaultRegionResolverTests: XCTestCase {
             excludedOwnerPID: 999
         )
         XCTAssertEqual(result, windows[0].frame.standardized)
+    }
+
+    func testScreenCapturePrefersContainingScreenOverWindow() {
+        let screens = [
+            CGRect(x: 0, y: 0, width: 1440, height: 900),
+            CGRect(x: 1440, y: 0, width: 1440, height: 900)
+        ]
+        let windows = [
+            CaptureWindowSnapshot(frame: CGRect(x: 1600, y: 160, width: 360, height: 260), ownerPID: 444, layer: 0, alpha: 1)
+        ]
+
+        let result = CaptureDefaultRegionResolver.resolveForScreenCapture(
+            pointer: CGPoint(x: 1700, y: 220),
+            windows: windows,
+            screens: screens,
+            excludedOwnerPID: 999
+        )
+
+        XCTAssertEqual(result, screens[1].standardized)
     }
 
     func testSkipsOwnProcessWindowsAndFallsThrough() {

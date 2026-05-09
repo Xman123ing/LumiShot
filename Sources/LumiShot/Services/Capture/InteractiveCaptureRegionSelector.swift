@@ -45,12 +45,42 @@ enum CaptureDefaultRegionResolver {
         }
         return screens.first?.standardized
     }
+
+    static func resolveForScreenCapture(
+        pointer: CGPoint,
+        windows: [CaptureWindowSnapshot],
+        screens: [CGRect],
+        excludedOwnerPID: Int32,
+        frontmostOwnerPID: Int32? = nil
+    ) -> CGRect? {
+        if let targetScreen = screens.first(where: { $0.contains(pointer) }) {
+            return targetScreen.standardized
+        }
+        return resolve(
+            pointer: pointer,
+            windows: windows,
+            screens: screens,
+            excludedOwnerPID: excludedOwnerPID,
+            frontmostOwnerPID: frontmostOwnerPID
+        )
+    }
+}
+
+enum CaptureOverlayCoordinateMapper {
+    static func toLocal(_ globalRect: CGRect, in overlayFrame: CGRect) -> CGRect {
+        globalRect.offsetBy(dx: -overlayFrame.origin.x, dy: -overlayFrame.origin.y)
+    }
+
+    static func toGlobal(_ localRect: CGRect, in overlayFrame: CGRect) -> CGRect {
+        localRect.offsetBy(dx: overlayFrame.origin.x, dy: overlayFrame.origin.y)
+    }
 }
 
 @MainActor
 final class InteractiveCaptureRegionSelector {
     private var overlayController: CaptureSelectionOverlayWindowController?
-    private var hiddenWindows: [NSWindow] = []
+    private var didHideMainWindow = false
+    private weak var hiddenMainWindow: NSWindow?
     private var wasAppActiveWhenSelectionStarted = false
 
     func beginSelection(
@@ -61,8 +91,12 @@ final class InteractiveCaptureRegionSelector {
         guard overlayController == nil else { return }
 
         wasAppActiveWhenSelectionStarted = NSApp.isActive
-        hiddenWindows = NSApp.windows.filter { $0.isVisible }
-        hiddenWindows.forEach { $0.orderOut(nil) }
+        didHideMainWindow = false
+        hiddenMainWindow = NSApp.mainWindow ?? NSApp.keyWindow
+        if let mainWindow = hiddenMainWindow, mainWindow.isVisible {
+            mainWindow.orderOut(nil)
+            didHideMainWindow = true
+        }
 
         let initialRect = defaultSelectionRect()
         let controller = CaptureSelectionOverlayWindowController(initialSelection: initialRect) { [weak self] rect in
@@ -85,14 +119,18 @@ final class InteractiveCaptureRegionSelector {
     }
 
     private func restoreWindows(forceFront: Bool = false) {
-        let windows = hiddenWindows
-        hiddenWindows = []
-        guard !windows.isEmpty else { return }
         if forceFront || wasAppActiveWhenSelectionStarted {
-            windows.forEach { $0.makeKeyAndOrderFront(nil) }
-        } else {
-            windows.forEach { $0.orderBack(nil) }
+            NSApp.unhide(nil)
+            _ = NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+            if didHideMainWindow, let hiddenMainWindow {
+                hiddenMainWindow.makeKeyAndOrderFront(nil)
+            } else {
+                NSApp.mainWindow?.makeKeyAndOrderFront(nil)
+                NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+            }
         }
+        didHideMainWindow = false
+        hiddenMainWindow = nil
     }
 
     private func defaultSelectionRect() -> CGRect? {
@@ -101,7 +139,7 @@ final class InteractiveCaptureRegionSelector {
         let screenFrames = NSScreen.screens.map(\.frame)
         let excludedOwnerPID = Int32(ProcessInfo.processInfo.processIdentifier)
         let frontmostOwnerPID = NSWorkspace.shared.frontmostApplication.map { Int32($0.processIdentifier) }
-        return CaptureDefaultRegionResolver.resolve(
+        return CaptureDefaultRegionResolver.resolveForScreenCapture(
             pointer: pointer,
             windows: windowSnapshots,
             screens: screenFrames,
@@ -168,11 +206,13 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
         window.backgroundColor = .clear
         window.isOpaque = false
         window.ignoresMouseEvents = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // .canJoinAllSpaces conflicts with .moveToActiveSpace and triggers AppKit assertion.
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.hasShadow = false
         super.init(window: window)
         window.contentView = CaptureSelectionOverlayView(
-            frame: frame,
+            frame: CGRect(origin: .zero, size: frame.size),
+            overlayFrame: frame,
             initialSelection: initialSelection,
             onFinished: { [weak self] rect in
                 self?.close()
@@ -187,6 +227,7 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
     }
 
     func show(activateApp: Bool) {
+        window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
         if activateApp {
             NSApp.activate(ignoringOtherApps: true)
@@ -198,15 +239,48 @@ private final class CaptureOverlayWindow: NSWindow {
     override var canBecomeKey: Bool { true }
 }
 
+@MainActor
+private enum CaptureCursorStyle {
+    static let screenshot: NSCursor = {
+        let size = NSSize(width: 28, height: 28)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        defer { image.unlockFocus() }
+
+        NSColor.white.setStroke()
+        let circle = NSBezierPath(ovalIn: NSRect(x: 8, y: 8, width: 12, height: 12))
+        circle.lineWidth = 1.6
+        circle.stroke()
+
+        let cross = NSBezierPath()
+        cross.lineWidth = 1.6
+        cross.lineCapStyle = .round
+        cross.move(to: NSPoint(x: 14, y: 0))
+        cross.line(to: NSPoint(x: 14, y: 28))
+        cross.move(to: NSPoint(x: 0, y: 14))
+        cross.line(to: NSPoint(x: 28, y: 14))
+        cross.stroke()
+
+        let glow = NSBezierPath(ovalIn: NSRect(x: 7, y: 7, width: 14, height: 14))
+        NSColor.black.withAlphaComponent(0.45).setStroke()
+        glow.lineWidth = 0.8
+        glow.stroke()
+
+        return NSCursor(image: image, hotSpot: NSPoint(x: 14, y: 14))
+    }()
+}
+
 private final class CaptureSelectionOverlayView: NSView {
     private let onFinished: (CGRect?) -> Void
+    private let overlayFrame: CGRect
     private var selectionRect: CGRect?
     private var dragStartPoint: NSPoint?
     private var dragCurrentPoint: NSPoint?
 
-    init(frame frameRect: NSRect, initialSelection: CGRect?, onFinished: @escaping (CGRect?) -> Void) {
+    init(frame frameRect: NSRect, overlayFrame: CGRect, initialSelection: CGRect?, onFinished: @escaping (CGRect?) -> Void) {
         self.onFinished = onFinished
-        self.selectionRect = initialSelection
+        self.overlayFrame = overlayFrame
+        self.selectionRect = initialSelection.map { CaptureOverlayCoordinateMapper.toLocal($0, in: overlayFrame) }
         super.init(frame: frameRect)
         wantsLayer = true
     }
@@ -225,14 +299,28 @@ private final class CaptureSelectionOverlayView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
+        window?.acceptsMouseMovedEvents = true
+        window?.invalidateCursorRects(for: self)
+        CaptureCursorStyle.screenshot.set()
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
+            NSCursor.arrow.set()
             onFinished(nil)
             return
         }
         super.keyDown(with: event)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: CaptureCursorStyle.screenshot)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        CaptureCursorStyle.screenshot.set()
+        super.mouseMoved(with: event)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -251,7 +339,11 @@ private final class CaptureSelectionOverlayView: NSView {
         if let draggedRect = normalizedDragRect(), draggedRect.width > 8, draggedRect.height > 8 {
             selectionRect = draggedRect
         }
-        onFinished(selectionRect?.standardized)
+        let globalSelection = selectionRect.map {
+            CaptureOverlayCoordinateMapper.toGlobal($0, in: overlayFrame).standardized
+        }
+        NSCursor.arrow.set()
+        onFinished(globalSelection)
     }
 
     override func draw(_ dirtyRect: NSRect) {

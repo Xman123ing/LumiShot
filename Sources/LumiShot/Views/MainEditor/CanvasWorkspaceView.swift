@@ -12,19 +12,38 @@ struct TextInlineEditingState: Equatable {
     let draftText: String
 }
 
+struct CounterInlineEditingState: Equatable {
+    let annotationID: UUID
+    let draftValue: String
+}
+
 struct CanvasWorkspaceView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let items: [AnnotationItem]
     let hasCapture: Bool
     let captureImage: CGImage?
     let captureLogicalSize: CGSize?
+    let zoomScale: Double
     let activeTool: ToolbarTool?
     let backdropEnabled: Bool
+    let backdropColor: AnnotationColor
+    let backdropGradientColors: [AnnotationColor]?
+    let backdropBorderWidth: Double
+    let backdropCornerRadius: Double
+    let backdropInnerRadius: Double
+    let backdropInset: Double
+    let backdropShadow: Double
     let onDrawRequest: (AnnotationDrawRequest) -> Void
     let onTextDoubleClick: (UUID) -> Void
     let textEditingState: TextInlineEditingState?
     let onTextEditingStateChange: (TextInlineEditingState?) -> Void
     let onTextCommit: (TextInlineEditingState) -> Void
+    let counterEditingState: CounterInlineEditingState?
+    let onCounterEditingStateChange: (CounterInlineEditingState?) -> Void
+    let onCounterCommit: (CounterInlineEditingState) -> Void
     let onCounterTap: (UUID) -> Void
+    let onAnnotationHoverChange: (UUID?) -> Void
+    let onDeleteRequest: (UUID) -> Void
     let onAnnotationMove: (UUID, CGPoint, CGPoint?, Bool) -> Void
     @State private var dragStartPoint: CGPoint?
     @State private var dragCurrentPoint: CGPoint?
@@ -32,35 +51,66 @@ struct CanvasWorkspaceView: View {
     @State private var dragAnchorCenter: CGPoint?
     @State private var dragAnchorTrailing: CGPoint?
     @State private var hoveredAnnotationID: UUID?
+    @State private var resizingArrowID: UUID?
+    @State private var resizingArrowCenter: CGPoint?
+    @State private var resizingRectangleID: UUID?
+    @State private var resizingRectangleCenter: CGPoint?
     @FocusState private var textEditorFocused: Bool
+    @FocusState private var counterEditorFocused: Bool
 
     init(
         items: [AnnotationItem],
         hasCapture: Bool,
         captureImage: CGImage? = nil,
         captureLogicalSize: CGSize? = nil,
+        zoomScale: Double = 1.0,
         activeTool: ToolbarTool? = nil,
         backdropEnabled: Bool = false,
+        backdropColor: AnnotationColor = AnnotationColor.defaultColor(for: .backdrop),
+        backdropGradientColors: [AnnotationColor]? = nil,
+        backdropBorderWidth: Double = AnnotationColorTool.backdrop.defaultStrokeWidth,
+        backdropCornerRadius: Double = 16,
+        backdropInnerRadius: Double = 12,
+        backdropInset: Double = 24,
+        backdropShadow: Double = 0.45,
         onDrawRequest: @escaping (AnnotationDrawRequest) -> Void = { _ in },
         onTextDoubleClick: @escaping (UUID) -> Void = { _ in },
         textEditingState: TextInlineEditingState? = nil,
         onTextEditingStateChange: @escaping (TextInlineEditingState?) -> Void = { _ in },
         onTextCommit: @escaping (TextInlineEditingState) -> Void = { _ in },
+        counterEditingState: CounterInlineEditingState? = nil,
+        onCounterEditingStateChange: @escaping (CounterInlineEditingState?) -> Void = { _ in },
+        onCounterCommit: @escaping (CounterInlineEditingState) -> Void = { _ in },
         onCounterTap: @escaping (UUID) -> Void = { _ in },
+        onAnnotationHoverChange: @escaping (UUID?) -> Void = { _ in },
+        onDeleteRequest: @escaping (UUID) -> Void = { _ in },
         onAnnotationMove: @escaping (UUID, CGPoint, CGPoint?, Bool) -> Void = { _, _, _, _ in }
     ) {
         self.items = items
         self.hasCapture = hasCapture
         self.captureImage = captureImage
         self.captureLogicalSize = captureLogicalSize
+        self.zoomScale = zoomScale
         self.activeTool = activeTool
         self.backdropEnabled = backdropEnabled
+        self.backdropColor = backdropColor
+        self.backdropGradientColors = backdropGradientColors
+        self.backdropBorderWidth = backdropBorderWidth
+        self.backdropCornerRadius = backdropCornerRadius
+        self.backdropInnerRadius = backdropInnerRadius
+        self.backdropInset = backdropInset
+        self.backdropShadow = backdropShadow
         self.onDrawRequest = onDrawRequest
         self.onTextDoubleClick = onTextDoubleClick
         self.textEditingState = textEditingState
         self.onTextEditingStateChange = onTextEditingStateChange
         self.onTextCommit = onTextCommit
+        self.counterEditingState = counterEditingState
+        self.onCounterEditingStateChange = onCounterEditingStateChange
+        self.onCounterCommit = onCounterCommit
         self.onCounterTap = onCounterTap
+        self.onAnnotationHoverChange = onAnnotationHoverChange
+        self.onDeleteRequest = onDeleteRequest
         self.onAnnotationMove = onAnnotationMove
     }
 
@@ -68,24 +118,46 @@ struct CanvasWorkspaceView: View {
         GeometryReader { geometry in
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.white.opacity(0.72))
+                    .fill(colorScheme == .dark ? .black.opacity(0.4) : .white.opacity(0.72))
 
                 if let captureImage {
                     let imageRect = displayImageRect(image: captureImage, in: geometry.size)
                     let imageSize = CGSize(width: captureImage.width, height: captureImage.height)
                     let displayItems = items.map { mapItemToDisplay($0, imageRect: imageRect, imageSize: imageSize) }
                     if backdropEnabled {
-                        BackdropStackView(imageRect: imageRect)
+                        BackdropStackView(
+                            imageRect: imageRect,
+                            color: backdropColor.swiftUIColor,
+                            gradientColors: backdropGradientColors?.map { $0.swiftUIColor },
+                            borderWidth: backdropBorderWidth,
+                            cornerRadius: backdropCornerRadius,
+                            inset: backdropInset
+                        )
                     }
-                    Image(nsImage: NSImage(cgImage: captureImage, size: displayImageSize(image: captureImage)))
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: imageRect.width, height: imageRect.height)
-                        .position(x: imageRect.midX, y: imageRect.midY)
+                    if backdropEnabled {
+                        Image(nsImage: NSImage(cgImage: captureImage, size: displayImageSize(image: captureImage)))
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: imageRect.width, height: imageRect.height)
+                            .clipShape(RoundedRectangle(cornerRadius: backdropInnerRadius, style: .continuous))
+                            .shadow(
+                                color: .black.opacity(max(0, min(0.8, backdropShadow))),
+                                radius: max(0, backdropShadow * 22),
+                                y: max(0, backdropShadow * 8)
+                            )
+                            .position(x: imageRect.midX, y: imageRect.midY)
+                    } else {
+                        Image(nsImage: NSImage(cgImage: captureImage, size: displayImageSize(image: captureImage)))
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: imageRect.width, height: imageRect.height)
+                            .position(x: imageRect.midX, y: imageRect.midY)
+                    }
 
                     if !displayItems.isEmpty {
                         AnnotationCanvasView(
                             items: displayItems,
+                            enableCounterTap: activeTool == nil,
                             onTextDoubleClick: onTextDoubleClick,
                             onCounterTap: onCounterTap
                         )
@@ -94,12 +166,14 @@ struct CanvasWorkspaceView: View {
                     if let editor = inlineEditor(in: imageRect, imageSize: imageSize, displayItems: displayItems) {
                         editor
                     }
+                    if let counterEditor = inlineCounterEditor(in: imageRect, imageSize: imageSize, displayItems: displayItems) {
+                        counterEditor
+                    }
                 }
 
                 if let previewPath = previewPath(in: geometry.size) {
                     previewPath
                         .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
-                        .padding(12)
                 }
 
                 if items.isEmpty {
@@ -108,12 +182,24 @@ struct CanvasWorkspaceView: View {
             }
             .contentShape(Rectangle())
             .simultaneousGesture(drawingGesture(in: geometry.size))
+            .contextMenu {
+                if let hoveredAnnotationID {
+                    Button(role: .destructive) {
+                        onDeleteRequest(hoveredAnnotationID)
+                    } label: {
+                        Text("Delete")
+                    }
+                } else {
+                    Text("No annotation")
+                }
+            }
             .onContinuousHover { phase in
                 guard let captureImage else { return }
                 switch phase {
                 case .active(let location):
                     let hit = hitTestAnnotation(at: location, image: captureImage, size: geometry.size)
                     hoveredAnnotationID = hit?.id
+                    onAnnotationHoverChange(hoveredAnnotationID)
                     if hit == nil {
                         NSCursor.arrow.set()
                     } else {
@@ -121,6 +207,7 @@ struct CanvasWorkspaceView: View {
                     }
                 case .ended:
                     hoveredAnnotationID = nil
+                    onAnnotationHoverChange(nil)
                     NSCursor.arrow.set()
                 }
             }
@@ -130,7 +217,12 @@ struct CanvasWorkspaceView: View {
             draggingAnnotationID = nil
             dragAnchorCenter = nil
             dragAnchorTrailing = nil
+            resizingArrowID = nil
+            resizingArrowCenter = nil
+            resizingRectangleID = nil
+            resizingRectangleCenter = nil
             hoveredAnnotationID = nil
+            onAnnotationHoverChange(nil)
             dragStartPoint = nil
             dragCurrentPoint = nil
             NSCursor.arrow.set()
@@ -142,7 +234,7 @@ struct CanvasWorkspaceView: View {
         if captureImage == nil {
             Text(emptyPlaceholderText)
                 .font(.system(size: 13))
-                .foregroundStyle(.black.opacity(0.45))
+                .foregroundStyle(colorScheme == .dark ? .white.opacity(0.45) : .black.opacity(0.45))
         }
     }
 
@@ -161,6 +253,28 @@ struct CanvasWorkspaceView: View {
                     let start = adjustedPointForActiveTool(value.startLocation)
                     if let hitItem = hitTestAnnotation(at: start, image: captureImage, size: size),
                        textEditingState?.annotationID != hitItem.id {
+                        if activeTool == .rectangle, hitItem.kind == .box, let trailing = hitItem.trailingPoint {
+                            let imageRect = displayImageRect(image: captureImage, in: size)
+                            let imageSize = CGSize(width: captureImage.width, height: captureImage.height)
+                            let trailingDisplay = mapToDisplayPoint(trailing, imageRect: imageRect, imageSize: imageSize)
+                            if hypot(start.x - trailingDisplay.x, start.y - trailingDisplay.y) <= 16 {
+                                resizingRectangleID = hitItem.id
+                                resizingRectangleCenter = hitItem.center
+                                NSCursor.crosshair.set()
+                                return
+                            }
+                        }
+                        if activeTool == .arrow, hitItem.kind == .arrow, let trailing = hitItem.trailingPoint {
+                            let imageRect = displayImageRect(image: captureImage, in: size)
+                            let imageSize = CGSize(width: captureImage.width, height: captureImage.height)
+                            let trailingDisplay = mapToDisplayPoint(trailing, imageRect: imageRect, imageSize: imageSize)
+                            if hypot(start.x - trailingDisplay.x, start.y - trailingDisplay.y) <= 16 {
+                                resizingArrowID = hitItem.id
+                                resizingArrowCenter = hitItem.center
+                                NSCursor.crosshair.set()
+                                return
+                            }
+                        }
                         draggingAnnotationID = hitItem.id
                         let imageRect = displayImageRect(image: captureImage, in: size)
                         let imageSize = CGSize(width: captureImage.width, height: captureImage.height)
@@ -173,7 +287,19 @@ struct CanvasWorkspaceView: View {
                         dragStartPoint = start
                     }
                 }
-                if let annotationID = draggingAnnotationID,
+                if let resizingRectangleID, let resizingRectangleCenter {
+                    let current = adjustedPointForActiveTool(value.location)
+                    guard let imageTrailing = convertToImagePoint(current, image: captureImage, size: size) else {
+                        return
+                    }
+                    onAnnotationMove(resizingRectangleID, resizingRectangleCenter, imageTrailing, false)
+                } else if let resizingArrowID, let resizingArrowCenter {
+                    let current = adjustedPointForActiveTool(value.location)
+                    guard let imageTrailing = convertToImagePoint(current, image: captureImage, size: size) else {
+                        return
+                    }
+                    onAnnotationMove(resizingArrowID, resizingArrowCenter, imageTrailing, false)
+                } else if let annotationID = draggingAnnotationID,
                    let anchorCenter = dragAnchorCenter {
                     let newCenter = CGPoint(
                         x: anchorCenter.x + value.translation.width,
@@ -202,10 +328,26 @@ struct CanvasWorkspaceView: View {
                     draggingAnnotationID = nil
                     dragAnchorCenter = nil
                     dragAnchorTrailing = nil
+                    resizingArrowID = nil
+                    resizingArrowCenter = nil
+                    resizingRectangleID = nil
+                    resizingRectangleCenter = nil
                     NSCursor.arrow.set()
                 }
                 guard let captureImage else { return }
-                if let annotationID = draggingAnnotationID,
+                if let resizingRectangleID, let resizingRectangleCenter {
+                    let current = adjustedPointForActiveTool(value.location)
+                    guard let imageTrailing = convertToImagePoint(current, image: captureImage, size: size) else {
+                        return
+                    }
+                    onAnnotationMove(resizingRectangleID, resizingRectangleCenter, imageTrailing, true)
+                } else if let resizingArrowID, let resizingArrowCenter {
+                    let current = adjustedPointForActiveTool(value.location)
+                    guard let imageTrailing = convertToImagePoint(current, image: captureImage, size: size) else {
+                        return
+                    }
+                    onAnnotationMove(resizingArrowID, resizingArrowCenter, imageTrailing, true)
+                } else if let annotationID = draggingAnnotationID,
                    let anchorCenter = dragAnchorCenter {
                     let finalCenter = CGPoint(
                         x: anchorCenter.x + value.translation.width,
@@ -280,9 +422,17 @@ struct CanvasWorkspaceView: View {
 
     private func displayImageRect(image: CGImage, in size: CGSize) -> CGRect {
         let contentRect = CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12)
-        return aspectFitRect(
+        let baseRect = aspectFitRect(
             contentSize: displayImageSize(image: image),
             in: contentRect
+        )
+        let zoom = max(0.25, min(3.0, zoomScale))
+        let zoomedSize = CGSize(width: baseRect.width * zoom, height: baseRect.height * zoom)
+        return CGRect(
+            x: contentRect.midX - zoomedSize.width / 2,
+            y: contentRect.midY - zoomedSize.height / 2,
+            width: zoomedSize.width,
+            height: zoomedSize.height
         )
     }
 
@@ -338,6 +488,39 @@ struct CanvasWorkspaceView: View {
         )
     }
 
+    private func inlineCounterEditor(in imageRect: CGRect, imageSize: CGSize, displayItems: [AnnotationItem]) -> AnyView? {
+        guard
+            let counterEditingState,
+            let item = displayItems.first(where: { $0.id == counterEditingState.annotationID && $0.kind == .number })
+        else {
+            return nil
+        }
+        let draftBinding = Binding(
+            get: { counterEditingState.draftValue },
+            set: { newValue in
+                onCounterEditingStateChange(
+                    CounterInlineEditingState(annotationID: counterEditingState.annotationID, draftValue: newValue)
+                )
+            }
+        )
+        return AnyView(
+            TextField("1", text: draftBinding)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 58)
+                .multilineTextAlignment(.center)
+                .position(item.center)
+                .focused($counterEditorFocused)
+                .onAppear {
+                    DispatchQueue.main.async {
+                        counterEditorFocused = true
+                    }
+                }
+                .onSubmit {
+                    onCounterCommit(counterEditingState)
+                }
+        )
+    }
+
     private func mapItemToDisplay(_ item: AnnotationItem, imageRect: CGRect, imageSize: CGSize) -> AnnotationItem {
         var mapped = item
         mapped.center = mapToDisplayPoint(item.center, imageRect: imageRect, imageSize: imageSize)
@@ -366,7 +549,11 @@ struct CanvasWorkspaceView: View {
             let trailing = item.trailingPoint.map { mapToDisplayPoint($0, imageRect: imageRect, imageSize: imageSize) }
             switch item.kind {
             case .text:
-                let hitRect = CGRect(x: center.x - 90, y: center.y - 20, width: 180, height: 40)
+                let hitRect = textHitRect(
+                    for: item.displayValue ?? "Text",
+                    at: center,
+                    fontSize: CGFloat(item.fontSize ?? 20)
+                )
                 if hitRect.contains(displayPoint) { return item }
             case .number:
                 if hypot(displayPoint.x - center.x, displayPoint.y - center.y) <= 20 { return item }
@@ -415,6 +602,17 @@ struct CanvasWorkspaceView: View {
         return hypot(p.x - cx, p.y - cy)
     }
 
+    private func textHitRect(for value: String, at center: CGPoint, fontSize: CGFloat) -> CGRect {
+        let text = value.isEmpty ? "Text" : value
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize)
+        ]
+        let measuredWidth = (text as NSString).size(withAttributes: attrs).width
+        let width = max(44, measuredWidth + 20)
+        let height = max(30, fontSize + 14)
+        return CGRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
+    }
+
     private func textEditorWidth(for text: String) -> CGFloat {
         let value = text.isEmpty ? "Text" : text
         let attrs: [NSAttributedString.Key: Any] = [
@@ -427,12 +625,33 @@ struct CanvasWorkspaceView: View {
 
 private struct BackdropStackView: View {
     let imageRect: CGRect
+    let color: Color
+    let gradientColors: [Color]?
+    let borderWidth: Double
+    let cornerRadius: Double
+    let inset: Double
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(.ultraThinMaterial)
-            .frame(width: imageRect.width + 24, height: imageRect.height + 24)
-            .shadow(color: .black.opacity(0.20), radius: 14, y: 6)
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backdropFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.72), lineWidth: CGFloat(borderWidth))
+            )
+            .frame(width: imageRect.width + (inset * 2), height: imageRect.height + (inset * 2))
         .position(x: imageRect.midX, y: imageRect.midY)
+    }
+
+    private var backdropFill: AnyShapeStyle {
+        if let gradientColors, gradientColors.count >= 2 {
+            return AnyShapeStyle(
+                LinearGradient(colors: gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+        }
+        return AnyShapeStyle(color)
     }
 }

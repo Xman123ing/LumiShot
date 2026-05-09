@@ -2,15 +2,18 @@ import SwiftUI
 
 public struct AnnotationCanvasView: View {
     public let items: [AnnotationItem]
+    public let enableCounterTap: Bool
     public let onTextDoubleClick: ((UUID) -> Void)?
     public let onCounterTap: ((UUID) -> Void)?
 
     public init(
         items: [AnnotationItem],
+        enableCounterTap: Bool = true,
         onTextDoubleClick: ((UUID) -> Void)? = nil,
         onCounterTap: ((UUID) -> Void)? = nil
     ) {
         self.items = items
+        self.enableCounterTap = enableCounterTap
         self.onTextDoubleClick = onTextDoubleClick
         self.onCounterTap = onCounterTap
     }
@@ -24,10 +27,15 @@ public struct AnnotationCanvasView: View {
                         id: item.id,
                         text: item.displayValue ?? "",
                         center: item.center,
+                        fillColor: item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .counter).swiftUIColor,
+                        ringWidth: CGFloat(item.strokeWidth ?? 0),
+                        enableTap: enableCounterTap,
                         onTap: onCounterTap
                     )
                 case .text:
                     Text(item.displayValue ?? "Text")
+                        .font(.system(size: CGFloat(item.fontSize ?? 20)))
+                        .foregroundStyle(item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .text).swiftUIColor)
                         .position(item.center)
                         .onTapGesture(count: 2) {
                             onTextDoubleClick?(item.id)
@@ -35,20 +43,33 @@ public struct AnnotationCanvasView: View {
                 case .box:
                     if let end = item.trailingPoint {
                         boxPath(from: item.center, to: end)
-                            .stroke(.yellow, lineWidth: 2)
+                            .stroke(
+                                item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .rectangle).swiftUIColor,
+                                lineWidth: CGFloat(item.strokeWidth ?? 2)
+                            )
                     } else {
                         Rectangle()
-                            .stroke(.yellow, lineWidth: 2)
+                            .stroke(
+                                item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .rectangle).swiftUIColor,
+                                lineWidth: CGFloat(item.strokeWidth ?? 2)
+                            )
                             .frame(width: 80, height: 50)
                             .position(item.center)
                     }
                 case .arrow:
                     if let end = item.trailingPoint {
                         arrowPath(from: item.center, to: end)
-                            .stroke(.red, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                            .stroke(
+                                item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .arrow).swiftUIColor,
+                                style: StrokeStyle(
+                                    lineWidth: CGFloat(item.strokeWidth ?? 3),
+                                    lineCap: .round,
+                                    lineJoin: .round
+                                )
+                            )
                     } else {
                         Image(systemName: "arrow.right")
-                            .foregroundStyle(.red)
+                            .foregroundStyle(item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .arrow).swiftUIColor)
                             .position(item.center)
                     }
                 case .mosaic:
@@ -62,7 +83,7 @@ public struct AnnotationCanvasView: View {
                         .position(item.center)
                 case .backdrop:
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.black.opacity(0.30))
+                        .fill(item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .backdrop).swiftUIColor)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(.white.opacity(0.65), lineWidth: 1.2)
@@ -113,20 +134,28 @@ private struct CounterBubbleView: View {
     let id: UUID
     let text: String
     let center: CGPoint
+    let fillColor: Color
+    let ringWidth: CGFloat
+    let enableTap: Bool
     let onTap: ((UUID) -> Void)?
 
     var body: some View {
         ZStack {
             Circle()
-                .fill(.red.opacity(0.92))
+                .fill(fillColor)
                 .frame(width: 30, height: 30)
+                .overlay(
+                    Circle()
+                        .stroke(.white.opacity(ringWidth > 0 ? 0.82 : 0), lineWidth: ringWidth)
+                )
             Text(text)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
         }
         .position(center)
         .contentShape(Rectangle())
-        .onTapGesture {
+        .onTapGesture(count: 2) {
+            guard enableTap else { return }
             onTap?(id)
         }
     }
