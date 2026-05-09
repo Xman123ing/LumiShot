@@ -129,7 +129,6 @@ struct CanvasWorkspaceView: View {
                             imageRect: imageRect,
                             color: backdropColor.swiftUIColor,
                             gradientColors: backdropGradientColors?.map { $0.swiftUIColor },
-                            borderWidth: backdropBorderWidth,
                             cornerRadius: backdropCornerRadius,
                             inset: backdropInset
                         )
@@ -556,7 +555,8 @@ struct CanvasWorkspaceView: View {
                 )
                 if hitRect.contains(displayPoint) { return item }
             case .number:
-                if hypot(displayPoint.x - center.x, displayPoint.y - center.y) <= 20 { return item }
+                let radius = counterHitRadius(for: item)
+                if hypot(displayPoint.x - center.x, displayPoint.y - center.y) <= radius { return item }
             case .mosaic:
                 let hitRect = CGRect(x: center.x - 46, y: center.y - 32, width: 92, height: 64)
                 if hitRect.contains(displayPoint) { return item }
@@ -621,29 +621,26 @@ struct CanvasWorkspaceView: View {
         let textWidth = (value as NSString).size(withAttributes: attrs).width
         return min(380, max(110, textWidth + 36))
     }
+
+    private func counterHitRadius(for item: AnnotationItem) -> CGFloat {
+        let clamped = min(max(CGFloat(item.strokeWidth ?? 0), 1), 12)
+        let diameter = 20 + clamped * 2.8
+        return max(20, diameter / 2 + 4)
+    }
 }
 
 private struct BackdropStackView: View {
     let imageRect: CGRect
     let color: Color
     let gradientColors: [Color]?
-    let borderWidth: Double
     let cornerRadius: Double
     let inset: Double
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(.ultraThinMaterial)
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(backdropFill)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.72), lineWidth: CGFloat(borderWidth))
-            )
+            .fill(backdropFill)
             .frame(width: imageRect.width + (inset * 2), height: imageRect.height + (inset * 2))
-        .position(x: imageRect.midX, y: imageRect.midY)
+            .position(x: imageRect.midX, y: imageRect.midY)
     }
 
     private var backdropFill: AnyShapeStyle {

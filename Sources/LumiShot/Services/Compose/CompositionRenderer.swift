@@ -97,21 +97,26 @@ public struct CompositionRenderer {
             }
         case .number:
             let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
-            let bubbleRect = CGRect(x: center.x - 14, y: center.y - 14, width: 28, height: 28)
+            let diameter = counterDiameter(for: CGFloat(item.strokeWidth ?? 0))
+            let bubbleRect = CGRect(
+                x: center.x - diameter / 2,
+                y: center.y - diameter / 2,
+                width: diameter,
+                height: diameter
+            )
             context.setFillColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .counter).cgColor)
             context.fillEllipse(in: bubbleRect)
-            if let stroke = item.strokeWidth, stroke > 0 {
-                context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.82))
-                context.setLineWidth(CGFloat(stroke))
-                context.strokeEllipse(in: bubbleRect.insetBy(dx: CGFloat(stroke) / 2, dy: CGFloat(stroke) / 2))
-            }
+            let ringWidth = max(1.2, diameter * 0.08)
+            context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.82))
+            context.setLineWidth(ringWidth)
+            context.strokeEllipse(in: bubbleRect.insetBy(dx: ringWidth / 2, dy: ringWidth / 2))
             let value = (item.displayValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if value.isEmpty == false {
                 drawCenteredText(
                     value,
                     at: center,
                     in: context,
-                    fontSize: 14,
+                    fontSize: max(12, diameter * 0.48),
                     fontName: "HelveticaNeue-Bold",
                     color: CGColor(red: 1, green: 1, blue: 1, alpha: 0.98)
                 )
@@ -171,6 +176,11 @@ public struct CompositionRenderer {
 
     private func quartzPoint(fromTopLeft point: CGPoint, canvasHeight: CGFloat) -> CGPoint {
         CGPoint(x: point.x, y: canvasHeight - point.y)
+    }
+
+    private func counterDiameter(for sizeControl: CGFloat) -> CGFloat {
+        let clamped = min(max(sizeControl, 1), 12)
+        return 20 + clamped * 2.8
     }
 
     private func drawCenteredText(

@@ -172,7 +172,7 @@ public final class MainWorkflowViewModel: ObservableObject {
         let image = composedImage()
         let urls = try exportService.exportPNG(
             image: image,
-            baseName: "lumishot-export",
+            baseName: timestampedExportBaseName(),
             directory: defaultExportDirectory()
         )
         diagnostics.exportStatus = "success"
@@ -215,6 +215,14 @@ public final class MainWorkflowViewModel: ObservableObject {
     private func defaultExportDirectory() -> URL {
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
         return downloads ?? FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    private func timestampedExportBaseName(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
     }
 }
 

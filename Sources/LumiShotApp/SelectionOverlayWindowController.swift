@@ -1,9 +1,9 @@
 import AppKit
 
 final class SelectionOverlayWindowController: NSWindowController {
-    private let completion: (CGRect) -> Void
+    private let completion: (CGRect?) -> Void
 
-    init(completion: @escaping (CGRect) -> Void) {
+    init(completion: @escaping (CGRect?) -> Void) {
         self.completion = completion
         let frame = ocrActiveDisplayFrames().reduce(CGRect.null) { partial, next in
             partial.union(next)
@@ -74,11 +74,11 @@ private func ocrActiveDisplayFrames() -> [CGRect] {
 }
 
 private final class SelectionOverlayView: NSView {
-    private let onFinished: (CGRect) -> Void
+    private let onFinished: (CGRect?) -> Void
     private var startPoint: NSPoint?
     private var currentPoint: NSPoint?
 
-    init(frame frameRect: NSRect, onFinished: @escaping (CGRect) -> Void) {
+    init(frame frameRect: NSRect, onFinished: @escaping (CGRect?) -> Void) {
         self.onFinished = onFinished
         super.init(frame: frameRect)
         wantsLayer = true
@@ -114,7 +114,15 @@ private final class SelectionOverlayView: NSView {
     override func mouseUp(with event: NSEvent) {
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
-        guard let selection = normalizedSelectionRect(), selection.width > 8, selection.height > 8, let window else { return }
+        guard let selection = normalizedSelectionRect(), let window else {
+            onFinished(nil)
+            return
+        }
+        if selection.width <= 8 || selection.height <= 8 {
+            // Single click (or tiny jitter) should cancel OCR extraction and close overlay.
+            onFinished(nil)
+            return
+        }
         let screenRect = window.convertToScreen(selection)
         onFinished(screenRect)
     }

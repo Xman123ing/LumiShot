@@ -28,7 +28,7 @@ public struct AnnotationCanvasView: View {
                         text: item.displayValue ?? "",
                         center: item.center,
                         fillColor: item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .counter).swiftUIColor,
-                        ringWidth: CGFloat(item.strokeWidth ?? 0),
+                        sizeControl: CGFloat(item.strokeWidth ?? 0),
                         enableTap: enableCounterTap,
                         onTap: onCounterTap
                     )
@@ -135,21 +135,24 @@ private struct CounterBubbleView: View {
     let text: String
     let center: CGPoint
     let fillColor: Color
-    let ringWidth: CGFloat
+    let sizeControl: CGFloat
     let enableTap: Bool
     let onTap: ((UUID) -> Void)?
 
     var body: some View {
+        let diameter = counterDiameter(for: sizeControl)
+        let ringWidth = max(1.2, diameter * 0.08)
+        let fontSize = max(12, diameter * 0.48)
         ZStack {
             Circle()
                 .fill(fillColor)
-                .frame(width: 30, height: 30)
+                .frame(width: diameter, height: diameter)
                 .overlay(
                     Circle()
-                        .stroke(.white.opacity(ringWidth > 0 ? 0.82 : 0), lineWidth: ringWidth)
+                        .stroke(.white.opacity(0.82), lineWidth: ringWidth)
                 )
             Text(text)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: fontSize, weight: .bold))
                 .foregroundStyle(.white)
         }
         .position(center)
@@ -158,6 +161,12 @@ private struct CounterBubbleView: View {
             guard enableTap else { return }
             onTap?(id)
         }
+    }
+
+    private func counterDiameter(for sizeControl: CGFloat) -> CGFloat {
+        // Counter slider range is 1...12. Map it to a clear visual size range.
+        let clamped = min(max(sizeControl, 1), 12)
+        return 20 + clamped * 2.8
     }
 }
 

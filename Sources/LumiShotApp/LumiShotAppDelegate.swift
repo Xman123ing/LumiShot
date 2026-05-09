@@ -5,6 +5,7 @@ import LumiShotKit
 final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
     private let regionOCRCoordinator = RegionOCRCoordinator()
     private var triggerObserver: NSObjectProtocol?
+    private var shortcutSettingsObserver: NSObjectProtocol?
     private var hotkeyServices: [AppShortcutAction: GlobalHotkeyService] = [:]
     private var lastRegisteredShortcuts: [AppShortcutAction: OCRShortcutConfiguration] = [:]
     private let globalHotkeyActions: Set<AppShortcutAction> = [.capture, .extractOCR]
@@ -28,6 +29,13 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
             logToDownloads("triggerExtractOCR notification received")
             self?.regionOCRCoordinator.beginSelection()
         }
+        shortcutSettingsObserver = NotificationCenter.default.addObserver(
+            forName: .appShortcutSettingsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.registerShortcutsFromSettings()
+        }
         logToDownloads("applicationDidFinishLaunching finished")
     }
 
@@ -35,6 +43,9 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         logToDownloads("applicationWillTerminate started")
         if let triggerObserver {
             NotificationCenter.default.removeObserver(triggerObserver)
+        }
+        if let shortcutSettingsObserver {
+            NotificationCenter.default.removeObserver(shortcutSettingsObserver)
         }
         for service in hotkeyServices.values {
             service.unregister()
@@ -164,6 +175,7 @@ private final class RegionOCRCoordinator {
         guard overlayController == nil else { return }
         let controller = SelectionOverlayWindowController { [weak self] rect in
             self?.overlayController = nil
+            guard let rect else { return }
             self?.performOCR(for: rect)
         }
         overlayController = controller

@@ -11,6 +11,12 @@ final class MainWorkflowViewModelTests: XCTestCase {
         try await sut.extractTextFromCurrentAsset()
         let output = try sut.exportCurrent()
         XCTAssertEqual(output.png.pathExtension, "png")
+        XCTAssertNotNil(
+            output.png.lastPathComponent.range(
+                of: #"^\d{8}-\d{6}\.png$"#,
+                options: .regularExpression
+            )
+        )
         XCTAssertFalse(sut.diagnostics.sessionID.isEmpty)
     }
 

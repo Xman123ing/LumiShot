@@ -1,6 +1,10 @@
 import Foundation
 import LumiShotKit
 
+extension Notification.Name {
+    static let appShortcutSettingsDidChange = Notification.Name("app.shortcut.settings.did.change")
+}
+
 enum AppShortcutAction: CaseIterable {
     case capture
     case copy

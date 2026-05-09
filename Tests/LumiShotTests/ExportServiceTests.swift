@@ -6,6 +6,7 @@ final class ExportServiceTests: XCTestCase {
     func testExportsOnlyPNGToDisk() throws {
         let sut = ExportService(fileManager: .default)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
         let urls = try sut.exportPNG(image: .fixtureCGImage, baseName: "sample", directory: tmp)
         let expectedMarkdownURL = tmp.appendingPathComponent("sample.md")
         let expectedTextURL = tmp.appendingPathComponent("sample.txt")
@@ -16,6 +17,20 @@ final class ExportServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: expectedMarkdownURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: expectedTextURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: expectedJPEGURL.path))
+    }
+
+    func testAppendsSuffixWhenPNGAlreadyExists() throws {
+        let sut = ExportService(fileManager: .default)
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let existing = tmp.appendingPathComponent("test-export-collision.png")
+        try Data("seed".utf8).write(to: existing)
+
+        let urls = try sut.exportPNG(image: .fixtureCGImage, baseName: "test-export-collision", directory: tmp)
+
+        XCTAssertEqual(urls.png.lastPathComponent, "test-export-collision-01.png")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: urls.png.path))
     }
 }
 
