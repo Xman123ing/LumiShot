@@ -169,13 +169,11 @@ public final class MainWorkflowViewModel: ObservableObject {
     }
 
     public func exportCurrent() throws -> ExportURLs {
-        let text = extractedText?.content ?? ""
         let image = composedImage()
-        let urls = try exportService.exportAll(
+        let urls = try exportService.exportPNG(
             image: image,
-            text: text,
             baseName: "lumishot-export",
-            directory: FileManager.default.temporaryDirectory
+            directory: defaultExportDirectory()
         )
         diagnostics.exportStatus = "success"
         return urls
@@ -212,6 +210,11 @@ public final class MainWorkflowViewModel: ObservableObject {
         context.setFillColor(gray: 0.4, alpha: 1.0)
         context.fill(CGRect(x: 0, y: 0, width: 12, height: 12))
         return context.makeImage()!
+    }
+
+    private func defaultExportDirectory() -> URL {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        return downloads ?? FileManager.default.homeDirectoryForCurrentUser
     }
 }
 

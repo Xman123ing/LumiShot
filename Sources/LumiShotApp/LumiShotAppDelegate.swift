@@ -158,42 +158,26 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 private final class RegionOCRCoordinator {
     private let ocrEngine = VisionOCREngine()
     private var overlayController: SelectionOverlayWindowController?
-    private var didHideMainWindow = false
-    private weak var hiddenMainWindow: NSWindow?
-    private var wasAppActiveWhenSelectionStarted = false
 
     func beginSelection() {
         logToDownloads("RegionOCRCoordinator.beginSelection started")
         guard overlayController == nil else { return }
-        wasAppActiveWhenSelectionStarted = NSApp.isActive
-        didHideMainWindow = false
-        hiddenMainWindow = NSApp.mainWindow ?? NSApp.keyWindow
-        if let mainWindow = hiddenMainWindow, mainWindow.isVisible {
-            mainWindow.orderOut(nil)
-            didHideMainWindow = true
-        }
         let controller = SelectionOverlayWindowController { [weak self] rect in
             self?.overlayController = nil
-            self?.performOCR(for: rect) { [weak self] in
-                self?.restoreHiddenWindows()
-            }
+            self?.performOCR(for: rect)
         }
         overlayController = controller
         controller.show()
         logToDownloads("RegionOCRCoordinator.beginSelection finished")
     }
 
-    private func performOCR(for rect: CGRect, onFinished: @escaping () -> Void) {
+    private func performOCR(for rect: CGRect) {
         let selectedRegion = rect.standardized
         guard selectedRegion.width > 8, selectedRegion.height > 8 else {
-            onFinished()
             return
         }
         let engine = ocrEngine
         Task.detached { [engine] in
-            defer {
-                DispatchQueue.main.async { onFinished() }
-            }
             try? await Task.sleep(for: .milliseconds(120))
             guard let image = CaptureService.defaultRegionImageProvider(region: selectedRegion) else { return }
             let primaryResult = try? await engine.recognize(image: image, languageHints: ["zh-Hans", "en-US"])
@@ -209,18 +193,5 @@ private final class RegionOCRCoordinator {
                 userInfo: [LumiShotNotifications.extractedTextKey: text]
             )
         }
-    }
-
-    private func restoreHiddenWindows() {
-        if wasAppActiveWhenSelectionStarted {
-            if didHideMainWindow, let hiddenMainWindow {
-                hiddenMainWindow.makeKeyAndOrderFront(nil)
-            } else {
-                NSApp.mainWindow?.makeKeyAndOrderFront(nil)
-                NSApp.keyWindow?.makeKeyAndOrderFront(nil)
-            }
-        }
-        didHideMainWindow = false
-        hiddenMainWindow = nil
     }
 }

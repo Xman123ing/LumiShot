@@ -82,10 +82,8 @@ public struct CaptureService: CaptureServicing {
 
     public static func defaultRegionImageProvider(region: CGRect) -> CGImage? {
         let appKitRegion = region.standardized
-        guard let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: appKitRegion.midX, y: appKitRegion.midY)) }) else {
-            return nil
-        }
-        let scale = targetScreen.backingScaleFactor
+        let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(CGPoint(x: appKitRegion.midX, y: appKitRegion.midY)) })
+        let scale = targetScreen?.backingScaleFactor ?? 2
         let pixelAlignedRegion = CGRect(
             x: (appKitRegion.origin.x * scale).rounded() / scale,
             y: (appKitRegion.origin.y * scale).rounded() / scale,
@@ -111,6 +109,9 @@ public struct CaptureService: CaptureServicing {
         }
 
         // Fallback for fullscreen/space edge cases where window-list region capture can return nil.
+        guard let targetScreen else {
+            return nil
+        }
         return captureRegionFromDisplay(pixelAlignedRegion, on: targetScreen, scale: scale)
     }
 

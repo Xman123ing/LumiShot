@@ -136,10 +136,10 @@ final class InteractiveCaptureRegionSelector {
     private func defaultSelectionRect() -> CGRect? {
         let pointer = NSEvent.mouseLocation
         let windowSnapshots = Self.fetchWindowSnapshots()
-        let screenFrames = NSScreen.screens.map(\.frame)
+        let screenFrames = captureActiveDisplayFrames()
         let excludedOwnerPID = Int32(ProcessInfo.processInfo.processIdentifier)
         let frontmostOwnerPID = NSWorkspace.shared.frontmostApplication.map { Int32($0.processIdentifier) }
-        return CaptureDefaultRegionResolver.resolveForScreenCapture(
+        return CaptureDefaultRegionResolver.resolve(
             pointer: pointer,
             windows: windowSnapshots,
             screens: screenFrames,
@@ -155,7 +155,7 @@ final class InteractiveCaptureRegionSelector {
         ) as? [[String: Any]] else {
             return []
         }
-        let desktopFrame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { partial, next in
+        let desktopFrame = captureActiveDisplayFrames().reduce(CGRect.null) { partial, next in
             partial.union(next)
         }
 
@@ -193,12 +193,12 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
 
     init(initialSelection: CGRect?, onFinished: @escaping (CGRect?) -> Void) {
         self.onFinished = onFinished
-        let frame = NSScreen.screens.map(\.frame).reduce(CGRect.null) { partial, next in
+        let frame = captureActiveDisplayFrames().reduce(CGRect.null) { partial, next in
             partial.union(next)
         }
-        let window = CaptureOverlayWindow(
+        let window = CaptureOverlayPanel(
             contentRect: frame,
-            styleMask: .borderless,
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -206,6 +206,7 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
         window.backgroundColor = .clear
         window.isOpaque = false
         window.ignoresMouseEvents = false
+        window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.hasShadow = false
         super.init(window: window)
@@ -226,7 +227,6 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
     }
 
     func show(activateApp: Bool) {
-        window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
         if activateApp {
             NSApp.activate(ignoringOtherApps: true)
@@ -234,8 +234,32 @@ private final class CaptureSelectionOverlayWindowController: NSWindowController 
     }
 }
 
-private final class CaptureOverlayWindow: NSWindow {
+private final class CaptureOverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+private func captureActiveDisplayFrames() -> [CGRect] {
+    var displayCount: UInt32 = 0
+    guard CGGetActiveDisplayList(0, nil, &displayCount) == .success, displayCount > 0 else {
+        return NSScreen.screens.map(\.frame)
+    }
+    var displays = Array(repeating: CGDirectDisplayID(), count: Int(displayCount))
+    guard CGGetActiveDisplayList(displayCount, &displays, &displayCount) == .success else {
+        return NSScreen.screens.map(\.frame)
+    }
+    let quartzFrames = displays.map { CGDisplayBounds($0) }
+    let desktopQuartzFrame = quartzFrames.reduce(CGRect.null) { partial, next in
+        partial.union(next)
+    }
+    return quartzFrames.map { quartzFrame in
+        CGRect(
+            x: quartzFrame.origin.x,
+            y: desktopQuartzFrame.maxY - quartzFrame.maxY,
+            width: quartzFrame.width,
+            height: quartzFrame.height
+        ).standardized
+    }
 }
 
 @MainActor
@@ -301,6 +325,13 @@ private final class CaptureSelectionOverlayView: NSView {
         window?.acceptsMouseMovedEvents = true
         window?.invalidateCursorRects(for: self)
         CaptureCursorStyle.screenshot.set()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            NSCursor.arrow.set()
+        }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func keyDown(with event: NSEvent) {

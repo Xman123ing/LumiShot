@@ -337,7 +337,7 @@ public struct MainWindowView: View {
         commitPendingCounterEditingIfNeeded()
         captureRegionSelector.beginSelection(
             autoRestore: false,
-            bringLumiShotToFrontForOverlay: true
+            bringLumiShotToFrontForOverlay: false
         ) { selectionRect in
             guard let selectionRect else {
                 self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()

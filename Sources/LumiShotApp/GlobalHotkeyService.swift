@@ -1,8 +1,5 @@
 import Carbon
 import LumiShotKit
-import os
-
-private let globalHotkeyLogger = Logger(subsystem: "com.lumishot.LumiShot", category: "GlobalHotkey")
 
 final class GlobalHotkeyService {
     var onHotkeyPressed: (() -> Void)?
@@ -20,7 +17,6 @@ final class GlobalHotkeyService {
         unregister()
 
         guard let keyCode = KeyCodeMapper.keyCode(for: shortcut.storageKey.lowercased()) else {
-            globalHotkeyLogger.debug("Unsupported hotkey storageKey: \(shortcut.storageKey)")
             return false
         }
 
@@ -53,7 +49,6 @@ final class GlobalHotkeyService {
                 &eventHandler
             )
             if installStatus != noErr {
-                globalHotkeyLogger.debug("InstallEventHandler failed: \(installStatus)")
                 return false
             }
         }
@@ -67,7 +62,6 @@ final class GlobalHotkeyService {
             &hotKeyRef
         )
         if registerStatus != noErr {
-            globalHotkeyLogger.debug("RegisterEventHotKey failed: \(registerStatus)")
             return false
         }
         return true

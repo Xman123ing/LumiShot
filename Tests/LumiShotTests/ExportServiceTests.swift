@@ -3,14 +3,19 @@ import XCTest
 @testable import LumiShotKit
 
 final class ExportServiceTests: XCTestCase {
-    func testExportsPNGAndMarkdownToDisk() throws {
+    func testExportsOnlyPNGToDisk() throws {
         let sut = ExportService(fileManager: .default)
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let urls = try sut.exportAll(image: .fixtureCGImage, text: "Hello", baseName: "sample", directory: tmp)
+        let urls = try sut.exportPNG(image: .fixtureCGImage, baseName: "sample", directory: tmp)
+        let expectedMarkdownURL = tmp.appendingPathComponent("sample.md")
+        let expectedTextURL = tmp.appendingPathComponent("sample.txt")
+        let expectedJPEGURL = tmp.appendingPathComponent("sample.jpg")
+
         XCTAssertTrue(urls.png.pathExtension == "png")
-        XCTAssertTrue(urls.markdown.pathExtension == "md")
         XCTAssertTrue(FileManager.default.fileExists(atPath: urls.png.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: urls.markdown.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedMarkdownURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedTextURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: expectedJPEGURL.path))
     }
 }
 
