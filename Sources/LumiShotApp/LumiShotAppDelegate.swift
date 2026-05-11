@@ -1,15 +1,18 @@
 @preconcurrency import AppKit
 import Carbon
 import LumiShotKit
+import SwiftUI
 
 final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
     private let regionOCRCoordinator = RegionOCRCoordinator()
     private var triggerObserver: NSObjectProtocol?
     private var shortcutSettingsObserver: NSObjectProtocol?
+    private var openMainWindowObserver: NSObjectProtocol?
     private var hotkeyServices: [AppShortcutAction: GlobalHotkeyService] = [:]
     private var lastRegisteredShortcuts: [AppShortcutAction: OCRShortcutConfiguration] = [:]
     private let globalHotkeyActions: Set<AppShortcutAction> = [.capture, .extractOCR]
     private var statusItem: NSStatusItem?
+    private var fallbackMainWindowController: NSWindowController?
 
     deinit {
         logToDownloads("LumiShotAppDelegate deinit")
@@ -36,6 +39,14 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.registerShortcutsFromSettings()
         }
+        openMainWindowObserver = NotificationCenter.default.addObserver(
+            forName: LumiShotNotifications.requestOpenMainWindow,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            logToDownloads("requestOpenMainWindow notification received")
+            self?.openMainAppWindowOnMainThread()
+        }
         logToDownloads("applicationDidFinishLaunching finished")
     }
 
@@ -46,6 +57,9 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         }
         if let shortcutSettingsObserver {
             NotificationCenter.default.removeObserver(shortcutSettingsObserver)
+        }
+        if let openMainWindowObserver {
+            NotificationCenter.default.removeObserver(openMainWindowObserver)
         }
         for service in hotkeyServices.values {
             service.unregister()
@@ -85,10 +99,15 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openMainAppWindowOnMainThread() {
+        logToDownloads("openMainAppWindowOnMainThread: begin")
         NSApp.unhide(nil)
         _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
-        NSApp.mainWindow?.makeKeyAndOrderFront(nil)
-        NSApp.keyWindow?.makeKeyAndOrderFront(nil)
+        if revealExistingWindow() == false {
+            logToDownloads("openMainAppWindowOnMainThread: no reusable window, creating fallback")
+            presentFallbackMainWindow()
+        } else {
+            logToDownloads("openMainAppWindowOnMainThread: reused existing window")
+        }
     }
 
     @objc nonisolated private func quitApp() {
@@ -134,12 +153,22 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 
     private func dispatchHotkeyAction(_ action: AppShortcutAction) {
         logToDownloads("dispatchHotkeyAction called for action: \(action)")
-        if action == .extractOCR || action == .capture {
+        if action == .extractOCR {
+            logToDownloads("dispatchHotkeyAction: posting extractOCR trigger")
+            NotificationCenter.default.post(name: action.triggerNotification, object: nil)
+            return
+        }
+        if action == .capture {
+            // Do NOT activate LumiShot for capture hotkey; keep current foreground app.
+            logToDownloads("dispatchHotkeyAction: ensuring capture support window without activation")
+            ensureCaptureSupportWindowWithoutActivation()
+            logToDownloads("dispatchHotkeyAction: posting capture trigger (no app activation)")
             NotificationCenter.default.post(name: action.triggerNotification, object: nil)
             return
         }
         openMainAppWindowOnMainThread()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            logToDownloads("dispatchHotkeyAction: posting trigger for action \(action)")
             NotificationCenter.default.post(name: action.triggerNotification, object: nil)
         }
     }
@@ -158,10 +187,79 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
             guard let service = hotkeyServices[action] else { continue }
             if service.register(shortcut: shortcut) {
                 lastRegisteredShortcuts[action] = shortcut
+                logToDownloads("registerShortcutsFromSettings: registered \(action) with key=\(shortcut.storageKey), cmd=\(shortcut.useCommand), shift=\(shortcut.useShift), opt=\(shortcut.useOption), ctrl=\(shortcut.useControl)")
             } else {
                 lastRegisteredShortcuts[action] = nil
+                logToDownloads("registerShortcutsFromSettings: failed to register \(action) with key=\(shortcut.storageKey)")
             }
         }
+    }
+
+    @discardableResult
+    private func revealExistingWindow() -> Bool {
+        let windows = NSApp.windows.filter { $0.canBecomeMain && ($0.contentViewController != nil || $0.isVisible) }
+        logToDownloads("revealExistingWindow: candidate_count=\(windows.count)")
+        for target in windows {
+            if target.isMiniaturized {
+                target.deminiaturize(nil)
+            }
+            target.makeKeyAndOrderFront(nil)
+            target.orderFrontRegardless()
+            // If a candidate cannot become visible, continue and let fallback create a new window.
+            if target.isVisible {
+                logToDownloads("revealExistingWindow: success title=\(target.title)")
+                return true
+            }
+        }
+        logToDownloads("revealExistingWindow: no visible window after attempt")
+        return false
+    }
+
+    private func presentFallbackMainWindow() {
+        if let window = fallbackMainWindowController?.window {
+            logToDownloads("presentFallbackMainWindow: reuse existing fallback window")
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+            return
+        }
+
+        let controller = makeFallbackMainWindowController()
+        fallbackMainWindowController = controller
+        guard let window = controller.window else { return }
+        controller.showWindow(nil)
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        logToDownloads("presentFallbackMainWindow: created new fallback window")
+    }
+
+    private func ensureCaptureSupportWindowWithoutActivation() {
+        if NSApp.windows.contains(where: { $0.canBecomeMain && $0.contentViewController != nil }) {
+            return
+        }
+        if fallbackMainWindowController == nil {
+            fallbackMainWindowController = makeFallbackMainWindowController()
+            logToDownloads("ensureCaptureSupportWindowWithoutActivation: created hidden fallback window")
+        }
+        // Keep listener view alive, but do not steal focus from foreground app.
+        fallbackMainWindowController?.window?.orderOut(nil)
+    }
+
+    private func makeFallbackMainWindowController() -> NSWindowController {
+        let window = NSWindow(
+            contentRect: NSRect(x: 140, y: 120, width: 1180, height: 760),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "LumiShot"
+        window.isReleasedWhenClosed = false
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.contentViewController = NSHostingController(rootView: MainWindowView())
+        return NSWindowController(window: window)
     }
 
 }
@@ -169,6 +267,7 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 private final class RegionOCRCoordinator {
     private let ocrEngine = VisionOCREngine()
     private var overlayController: SelectionOverlayWindowController?
+    @MainActor private let statusPresenter = OCRStatusToastPresenter()
 
     func beginSelection() {
         logToDownloads("RegionOCRCoordinator.beginSelection started")
@@ -186,24 +285,157 @@ private final class RegionOCRCoordinator {
     private func performOCR(for rect: CGRect) {
         let selectedRegion = rect.standardized
         guard selectedRegion.width > 8, selectedRegion.height > 8 else {
+            logToDownloads("RegionOCRCoordinator.performOCR ignored tiny selection")
             return
         }
+        logToDownloads("RegionOCRCoordinator.performOCR started rect=\(selectedRegion)")
         let engine = ocrEngine
+        let statusPresenter = statusPresenter
         Task.detached { [engine] in
             try? await Task.sleep(for: .milliseconds(120))
-            guard let image = CaptureService.defaultRegionImageProvider(region: selectedRegion) else { return }
+            guard let image = CaptureService.defaultRegionImageProvider(region: selectedRegion) else {
+                await MainActor.run {
+                    logToDownloads("RegionOCRCoordinator.performOCR failed: capture image unavailable")
+                    statusPresenter.show(success: false)
+                    NotificationCenter.default.post(
+                        name: LumiShotNotifications.didExtractOCRText,
+                        object: nil,
+                        userInfo: [LumiShotNotifications.extractedTextKey: ""]
+                    )
+                }
+                return
+            }
             let primaryResult = try? await engine.recognize(image: image, languageHints: ["zh-Hans", "en-US"])
             let fallbackResult = try? await engine.recognize(image: image, languageHints: [])
             let text = (primaryResult?.text ?? fallbackResult?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let success = text.isEmpty == false
+            await MainActor.run {
+                logToDownloads("RegionOCRCoordinator.performOCR finished success=\(success) text_length=\(text.count)")
+            }
             if text.isEmpty == false {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
             }
-            NotificationCenter.default.post(
-                name: LumiShotNotifications.didExtractOCRText,
-                object: nil,
-                userInfo: [LumiShotNotifications.extractedTextKey: text]
-            )
+            await MainActor.run {
+                statusPresenter.show(success: success)
+                NotificationCenter.default.post(
+                    name: LumiShotNotifications.didExtractOCRText,
+                    object: nil,
+                    userInfo: [LumiShotNotifications.extractedTextKey: text]
+                )
+            }
         }
+    }
+}
+
+@MainActor
+private final class OCRStatusToastPresenter {
+    private var panel: NSPanel?
+    private var dismissWorkItem: DispatchWorkItem?
+
+    func show(success: Bool) {
+        dismissWorkItem?.cancel()
+
+        let message = success ? "Text extraction succeeded" : "Text extraction failed"
+        let content = OCRStatusToastView(message: message, success: success)
+        let hostView = NSHostingView(rootView: content)
+        hostView.translatesAutoresizingMaskIntoConstraints = false
+        hostView.wantsLayer = true
+        hostView.layer?.backgroundColor = NSColor.clear.cgColor
+        let fitting = hostView.fittingSize
+        let panelSize = NSSize(
+            width: max(220, ceil(fitting.width)),
+            height: max(78, ceil(fitting.height))
+        )
+
+        let panel = makeOrReusePanel()
+        panel.setContentSize(panelSize)
+        let container = NSView(frame: NSRect(origin: .zero, size: panelSize))
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = container
+        panel.contentView?.addSubview(hostView)
+        NSLayoutConstraint.activate([
+            hostView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            hostView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            hostView.topAnchor.constraint(equalTo: container.topAnchor),
+            hostView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+
+        position(panel: panel)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.16
+            panel.animator().alphaValue = 1
+        }
+
+        let work = DispatchWorkItem { [weak panel] in
+            guard let panel else { return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.25
+                panel.animator().alphaValue = 0
+            }, completionHandler: {
+                panel.orderOut(nil)
+            })
+        }
+        dismissWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    private func makeOrReusePanel() -> NSPanel {
+        if let panel {
+            return panel
+        }
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 78),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.level = .statusBar
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        self.panel = panel
+        return panel
+    }
+
+    private func position(panel: NSPanel) {
+        let mousePoint = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { $0.frame.contains(mousePoint) }) ?? NSScreen.main
+        let visibleFrame = (targetScreen?.visibleFrame ?? NSScreen.screens.first?.visibleFrame) ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let x = visibleFrame.midX - panel.frame.width / 2
+        let y = visibleFrame.minY + 64
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+}
+
+private struct OCRStatusToastView: View {
+    let message: String
+    let success: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(success ? Color.green : Color.red)
+            Text(message)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(0.32), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.25), radius: 12, y: 6)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }

@@ -299,6 +299,7 @@ private final class CaptureSelectionOverlayView: NSView {
     private var selectionRect: CGRect?
     private var dragStartPoint: NSPoint?
     private var dragCurrentPoint: NSPoint?
+    private var cursorTrackingArea: NSTrackingArea?
 
     init(frame frameRect: NSRect, overlayFrame: CGRect, initialSelection: CGRect?, onFinished: @escaping (CGRect?) -> Void) {
         self.onFinished = onFinished
@@ -327,6 +328,21 @@ private final class CaptureSelectionOverlayView: NSView {
         CaptureCursorStyle.screenshot.set()
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let cursorTrackingArea {
+            removeTrackingArea(cursorTrackingArea)
+        }
+        let tracking = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseMoved, .cursorUpdate, .enabledDuringMouseDrag],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(tracking)
+        cursorTrackingArea = tracking
+    }
+
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             NSCursor.arrow.set()
@@ -353,18 +369,26 @@ private final class CaptureSelectionOverlayView: NSView {
         super.mouseMoved(with: event)
     }
 
+    override func cursorUpdate(with event: NSEvent) {
+        CaptureCursorStyle.screenshot.set()
+        super.cursorUpdate(with: event)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        CaptureCursorStyle.screenshot.set()
         dragStartPoint = convert(event.locationInWindow, from: nil)
         dragCurrentPoint = dragStartPoint
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
+        CaptureCursorStyle.screenshot.set()
         dragCurrentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
+        CaptureCursorStyle.screenshot.set()
         dragCurrentPoint = convert(event.locationInWindow, from: nil)
         if let draggedRect = normalizedDragRect(), draggedRect.width > 8, draggedRect.height > 8 {
             selectionRect = draggedRect
@@ -372,7 +396,6 @@ private final class CaptureSelectionOverlayView: NSView {
         let globalSelection = selectionRect.map {
             CaptureOverlayCoordinateMapper.toGlobal($0, in: overlayFrame).standardized
         }
-        NSCursor.arrow.set()
         onFinished(globalSelection)
     }
 

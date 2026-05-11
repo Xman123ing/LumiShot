@@ -339,9 +339,10 @@ public struct MainWindowView: View {
             autoRestore: false,
             bringLumiShotToFrontForOverlay: false
         ) { selectionRect in
+            NSCursor.arrow.set()
             guard let selectionRect else {
                 self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
-                self.bringMainWindowToFront()
+                NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
                 self.showToast("Capture cancelled.")
                 return
             }
@@ -356,11 +357,11 @@ public struct MainWindowView: View {
                     self.annotationUndoStack = []
                     self.hoveredAnnotationID = nil
                     self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
-                    self.bringMainWindowToFront()
+                    NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
                     self.showToast("Capture completed.")
                 } catch {
                     self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
-                    self.bringMainWindowToFront()
+                    NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
                     self.showToast("Capture failed: \(captureErrorMessage(error))")
                 }
             }
