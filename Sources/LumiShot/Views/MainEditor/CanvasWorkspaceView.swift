@@ -33,6 +33,8 @@ struct CanvasWorkspaceView: View {
     let backdropInnerRadius: Double
     let backdropInset: Double
     let backdropShadow: Double
+    let previewArrowStrokeWidth: Double
+    let previewArrowColor: AnnotationColor
     let onDrawRequest: (AnnotationDrawRequest) -> Void
     let onTextDoubleClick: (UUID) -> Void
     let textEditingState: TextInlineEditingState?
@@ -73,6 +75,8 @@ struct CanvasWorkspaceView: View {
         backdropInnerRadius: Double = 12,
         backdropInset: Double = 24,
         backdropShadow: Double = 0.45,
+        previewArrowStrokeWidth: Double = AnnotationColorTool.arrow.defaultStrokeWidth,
+        previewArrowColor: AnnotationColor = AnnotationColor.defaultColor(for: .arrow),
         onDrawRequest: @escaping (AnnotationDrawRequest) -> Void = { _ in },
         onTextDoubleClick: @escaping (UUID) -> Void = { _ in },
         textEditingState: TextInlineEditingState? = nil,
@@ -100,6 +104,8 @@ struct CanvasWorkspaceView: View {
         self.backdropInnerRadius = backdropInnerRadius
         self.backdropInset = backdropInset
         self.backdropShadow = backdropShadow
+        self.previewArrowStrokeWidth = previewArrowStrokeWidth
+        self.previewArrowColor = previewArrowColor
         self.onDrawRequest = onDrawRequest
         self.onTextDoubleClick = onTextDoubleClick
         self.textEditingState = textEditingState
@@ -170,9 +176,8 @@ struct CanvasWorkspaceView: View {
                     }
                 }
 
-                if let previewPath = previewPath(in: geometry.size) {
-                    previewPath
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+                if let preview = previewOverlay(in: geometry.size) {
+                    preview
                 }
 
                 if items.isEmpty {
@@ -377,33 +382,74 @@ struct CanvasWorkspaceView: View {
             }
     }
 
-    private func previewPath(in size: CGSize) -> Path? {
+    private func previewOverlay(in size: CGSize) -> AnyView? {
         guard
             let tool = activeTool,
             draggingAnnotationID == nil,
             let start = dragStartPoint,
             let end = dragCurrentPoint
-        else { return nil }
+        else {
+            return nil
+        }
 
         switch tool {
         case .rectangle:
-            var path = Path()
             let rect = CGRect(
                 x: min(start.x, end.x),
                 y: min(start.y, end.y),
                 width: abs(end.x - start.x),
                 height: abs(end.y - start.y)
             )
-            path.addRect(rect)
-            return path
-        case .arrow:
             var path = Path()
-            path.move(to: start)
-            path.addLine(to: end)
-            return path
+            path.addRect(rect)
+            return AnyView(path.stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [4, 3])))
+        case .arrow:
+            let arrow = taperedArrowPreviewPath(from: start, to: end, sizeControl: CGFloat(previewArrowStrokeWidth))
+                .fill(previewArrowColor.swiftUIColor)
+            return AnyView(arrow)
         case .text, .counter, .floatingPin, .backdrop:
             return nil
         }
+    }
+
+    private func taperedArrowPreviewPath(from start: CGPoint, to end: CGPoint, sizeControl: CGFloat) -> Path {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = hypot(dx, dy)
+        guard length > 2 else {
+            var dot = Path()
+            dot.addEllipse(in: CGRect(x: start.x - 1, y: start.y - 1, width: 2, height: 2))
+            return dot
+        }
+        let ux = dx / length
+        let uy = dy / length
+        let nx = -uy
+        let ny = ux
+
+        let clamped = min(max(sizeControl, 1), 12)
+        let tailWidth = max(5, clamped * 1.0)
+        let headLength = min(max(clamped * 3.8 + length * 0.18, 16), length * 0.56)
+        let neckWidth = max(10, clamped * 1.9 + length * 0.02)
+        let headWidth = max(neckWidth * 1.35, clamped * 3.4 + length * 0.05)
+        let headBase = CGPoint(x: end.x - ux * headLength, y: end.y - uy * headLength)
+
+        let tailLeft = CGPoint(x: start.x + nx * tailWidth * 0.5, y: start.y + ny * tailWidth * 0.5)
+        let tailRight = CGPoint(x: start.x - nx * tailWidth * 0.5, y: start.y - ny * tailWidth * 0.5)
+        let neckLeft = CGPoint(x: headBase.x + nx * neckWidth * 0.5, y: headBase.y + ny * neckWidth * 0.5)
+        let neckRight = CGPoint(x: headBase.x - nx * neckWidth * 0.5, y: headBase.y - ny * neckWidth * 0.5)
+        let leftWing = CGPoint(x: headBase.x + nx * headWidth * 0.5, y: headBase.y + ny * headWidth * 0.5)
+        let rightWing = CGPoint(x: headBase.x - nx * headWidth * 0.5, y: headBase.y - ny * headWidth * 0.5)
+
+        var path = Path()
+        path.move(to: tailLeft)
+        path.addLine(to: neckLeft)
+        path.addLine(to: leftWing)
+        path.addLine(to: end)
+        path.addLine(to: rightWing)
+        path.addLine(to: neckRight)
+        path.addLine(to: tailRight)
+        path.closeSubpath()
+        return path
     }
 
     private func convertToImagePoint(_ point: CGPoint, image: CGImage, size: CGSize) -> CGPoint? {

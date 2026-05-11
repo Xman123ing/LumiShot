@@ -58,15 +58,8 @@ public struct AnnotationCanvasView: View {
                     }
                 case .arrow:
                     if let end = item.trailingPoint {
-                        arrowPath(from: item.center, to: end)
-                            .stroke(
-                                item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .arrow).swiftUIColor,
-                                style: StrokeStyle(
-                                    lineWidth: CGFloat(item.strokeWidth ?? 3),
-                                    lineCap: .round,
-                                    lineJoin: .round
-                                )
-                            )
+                        taperedArrowPath(from: item.center, to: end, sizeControl: CGFloat(item.strokeWidth ?? 3))
+                            .fill(item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .arrow).swiftUIColor)
                     } else {
                         Image(systemName: "arrow.right")
                             .foregroundStyle(item.color?.swiftUIColor ?? AnnotationColor.defaultColor(for: .arrow).swiftUIColor)
@@ -107,25 +100,43 @@ public struct AnnotationCanvasView: View {
         return path
     }
 
-    private func arrowPath(from start: CGPoint, to end: CGPoint) -> Path {
-        var path = Path()
-        path.move(to: start)
-        path.addLine(to: end)
+    private func taperedArrowPath(from start: CGPoint, to end: CGPoint, sizeControl: CGFloat) -> Path {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = hypot(dx, dy)
+        guard length > 2 else {
+            var dot = Path()
+            dot.addEllipse(in: CGRect(x: start.x - 1, y: start.y - 1, width: 2, height: 2))
+            return dot
+        }
+        let ux = dx / length
+        let uy = dy / length
+        let nx = -uy
+        let ny = ux
 
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let headLength: CGFloat = 12
-        let left = CGPoint(
-            x: end.x - headLength * cos(angle - .pi / 6),
-            y: end.y - headLength * sin(angle - .pi / 6)
-        )
-        let right = CGPoint(
-            x: end.x - headLength * cos(angle + .pi / 6),
-            y: end.y - headLength * sin(angle + .pi / 6)
-        )
-        path.move(to: end)
-        path.addLine(to: left)
-        path.move(to: end)
-        path.addLine(to: right)
+        let clamped = min(max(sizeControl, 1), 12)
+        let tailWidth = max(5, clamped * 1.0)
+        let headLength = min(max(clamped * 3.8 + length * 0.18, 16), length * 0.56)
+        let neckWidth = max(10, clamped * 1.9 + length * 0.02)
+        let headWidth = max(neckWidth * 1.35, clamped * 3.4 + length * 0.05)
+        let headBase = CGPoint(x: end.x - ux * headLength, y: end.y - uy * headLength)
+
+        let tailLeft = CGPoint(x: start.x + nx * tailWidth * 0.5, y: start.y + ny * tailWidth * 0.5)
+        let tailRight = CGPoint(x: start.x - nx * tailWidth * 0.5, y: start.y - ny * tailWidth * 0.5)
+        let neckLeft = CGPoint(x: headBase.x + nx * neckWidth * 0.5, y: headBase.y + ny * neckWidth * 0.5)
+        let neckRight = CGPoint(x: headBase.x - nx * neckWidth * 0.5, y: headBase.y - ny * neckWidth * 0.5)
+        let leftWing = CGPoint(x: headBase.x + nx * headWidth * 0.5, y: headBase.y + ny * headWidth * 0.5)
+        let rightWing = CGPoint(x: headBase.x - nx * headWidth * 0.5, y: headBase.y - ny * headWidth * 0.5)
+
+        var path = Path()
+        path.move(to: tailLeft)
+        path.addLine(to: neckLeft)
+        path.addLine(to: leftWing)
+        path.addLine(to: end)
+        path.addLine(to: rightWing)
+        path.addLine(to: neckRight)
+        path.addLine(to: tailRight)
+        path.closeSubpath()
         return path
     }
 }

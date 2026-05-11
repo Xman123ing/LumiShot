@@ -140,6 +140,8 @@ public struct MainWindowView: View {
                     backdropInnerRadius: toolStyleStore.currentBackdropInnerRadius(),
                     backdropInset: toolStyleStore.currentBackdropInset(),
                     backdropShadow: toolStyleStore.currentBackdropShadow(),
+                    previewArrowStrokeWidth: toolStyleStore.strokeWidth(for: .arrow),
+                    previewArrowColor: toolStyleStore.color(for: .arrow),
                     onDrawRequest: { request in
                         handleDrawRequest(request)
                     },

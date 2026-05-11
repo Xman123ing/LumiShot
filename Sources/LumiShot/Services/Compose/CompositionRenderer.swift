@@ -59,41 +59,26 @@ public struct CompositionRenderer {
                 context.stroke(CGRect(x: center.x - 45, y: center.y - 30, width: 90, height: 60))
             }
         case .arrow:
-            context.setStrokeColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .arrow).cgColor)
-            context.setLineWidth(CGFloat(item.strokeWidth ?? 4))
+            let arrowColor = item.color?.cgColor ?? AnnotationColor.defaultColor(for: .arrow).cgColor
             if let end = item.trailingPoint {
                 let startQuartz = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
                 let endQuartz = quartzPoint(fromTopLeft: end, canvasHeight: canvasHeight)
-                context.move(to: startQuartz)
-                context.addLine(to: endQuartz)
-                context.strokePath()
-                let angle = atan2(endQuartz.y - startQuartz.y, endQuartz.x - startQuartz.x)
-                let headLength: CGFloat = 16
-                let left = CGPoint(
-                    x: endQuartz.x - headLength * cos(angle - .pi / 6),
-                    y: endQuartz.y - headLength * sin(angle - .pi / 6)
+                fillTaperedArrow(
+                    in: context,
+                    from: startQuartz,
+                    to: endQuartz,
+                    sizeControl: CGFloat(item.strokeWidth ?? 4),
+                    color: arrowColor
                 )
-                let right = CGPoint(
-                    x: endQuartz.x - headLength * cos(angle + .pi / 6),
-                    y: endQuartz.y - headLength * sin(angle + .pi / 6)
-                )
-                context.move(to: endQuartz)
-                context.addLine(to: left)
-                context.move(to: endQuartz)
-                context.addLine(to: right)
-                context.strokePath()
             } else {
                 let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
-                context.move(to: CGPoint(x: center.x - 35, y: center.y - 20))
-                context.addLine(to: CGPoint(x: center.x + 25, y: center.y + 20))
-                context.strokePath()
-                context.setFillColor(item.color?.cgColor ?? AnnotationColor.defaultColor(for: .arrow).cgColor)
-                context.beginPath()
-                context.move(to: CGPoint(x: center.x + 35, y: center.y + 24))
-                context.addLine(to: CGPoint(x: center.x + 16, y: center.y + 17))
-                context.addLine(to: CGPoint(x: center.x + 27, y: center.y + 4))
-                context.closePath()
-                context.fillPath()
+                fillTaperedArrow(
+                    in: context,
+                    from: CGPoint(x: center.x - 32, y: center.y - 20),
+                    to: CGPoint(x: center.x + 32, y: center.y + 18),
+                    sizeControl: CGFloat(item.strokeWidth ?? 4),
+                    color: arrowColor
+                )
             }
         case .number:
             let center = quartzPoint(fromTopLeft: item.center, canvasHeight: canvasHeight)
@@ -181,6 +166,53 @@ public struct CompositionRenderer {
     private func counterDiameter(for sizeControl: CGFloat) -> CGFloat {
         let clamped = min(max(sizeControl, 1), 12)
         return 20 + clamped * 2.8
+    }
+
+    private func fillTaperedArrow(
+        in context: CGContext,
+        from start: CGPoint,
+        to end: CGPoint,
+        sizeControl: CGFloat,
+        color: CGColor
+    ) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = hypot(dx, dy)
+        guard length > 2 else {
+            context.setFillColor(color)
+            context.fillEllipse(in: CGRect(x: start.x - 1, y: start.y - 1, width: 2, height: 2))
+            return
+        }
+        let ux = dx / length
+        let uy = dy / length
+        let nx = -uy
+        let ny = ux
+
+        let clamped = min(max(sizeControl, 1), 12)
+        let tailWidth = max(5, clamped * 1.0)
+        let headLength = min(max(clamped * 3.8 + length * 0.18, 16), length * 0.56)
+        let neckWidth = max(10, clamped * 1.9 + length * 0.02)
+        let headWidth = max(neckWidth * 1.35, clamped * 3.4 + length * 0.05)
+        let headBase = CGPoint(x: end.x - ux * headLength, y: end.y - uy * headLength)
+
+        let tailLeft = CGPoint(x: start.x + nx * tailWidth * 0.5, y: start.y + ny * tailWidth * 0.5)
+        let tailRight = CGPoint(x: start.x - nx * tailWidth * 0.5, y: start.y - ny * tailWidth * 0.5)
+        let neckLeft = CGPoint(x: headBase.x + nx * neckWidth * 0.5, y: headBase.y + ny * neckWidth * 0.5)
+        let neckRight = CGPoint(x: headBase.x - nx * neckWidth * 0.5, y: headBase.y - ny * neckWidth * 0.5)
+        let leftWing = CGPoint(x: headBase.x + nx * headWidth * 0.5, y: headBase.y + ny * headWidth * 0.5)
+        let rightWing = CGPoint(x: headBase.x - nx * headWidth * 0.5, y: headBase.y - ny * headWidth * 0.5)
+
+        context.setFillColor(color)
+        context.beginPath()
+        context.move(to: tailLeft)
+        context.addLine(to: neckLeft)
+        context.addLine(to: leftWing)
+        context.addLine(to: end)
+        context.addLine(to: rightWing)
+        context.addLine(to: neckRight)
+        context.addLine(to: tailRight)
+        context.closePath()
+        context.fillPath()
     }
 
     private func drawCenteredText(
