@@ -4,6 +4,9 @@ import LumiShotKit
 import SwiftUI
 
 final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
+    private static let defaultMainWindowSize = NSSize(width: 1180, height: 760)
+    private static let minimumMainWindowSize = NSSize(width: 900, height: 620)
+
     private let regionOCRCoordinator = RegionOCRCoordinator()
     private var triggerObserver: NSObjectProtocol?
     private var shortcutSettingsObserver: NSObjectProtocol?
@@ -22,6 +25,7 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         logToDownloads("applicationDidFinishLaunching started")
         AppAppearanceManager.applyCurrent()
         setupStatusItem()
+        prepareFallbackMainWindowControllerIfNeeded()
         setupHotkeyServices()
         registerShortcutsFromSettings()
         triggerObserver = NotificationCenter.default.addObserver(
@@ -102,6 +106,7 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
         logToDownloads("openMainAppWindowOnMainThread: begin")
         NSApp.unhide(nil)
         _ = NSRunningApplication.current.activate(options: [.activateAllWindows])
+        prepareFallbackMainWindowControllerIfNeeded()
         if revealExistingWindow() == false {
             logToDownloads("openMainAppWindowOnMainThread: no reusable window, creating fallback")
             presentFallbackMainWindow()
@@ -127,9 +132,9 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
             button.toolTip = "LumiShot"
         }
         let menu = NSMenu()
-        let openItem = NSMenuItem(title: "Open App", action: #selector(openMainAppWindow), keyEquivalent: "")
-        openItem.target = self
-        menu.addItem(openItem)
+        let reopenItem = NSMenuItem(title: "Reopen", action: #selector(openMainAppWindow), keyEquivalent: "")
+        reopenItem.target = self
+        menu.addItem(reopenItem)
         menu.addItem(NSMenuItem.separator())
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
@@ -197,9 +202,24 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     private func revealExistingWindow() -> Bool {
-        let windows = NSApp.windows.filter { $0.canBecomeMain && ($0.contentViewController != nil || $0.isVisible) }
-        logToDownloads("revealExistingWindow: candidate_count=\(windows.count)")
-        for target in windows {
+        let fallback = fallbackMainWindowController?.window
+        let appWindows = NSApp.windows.filter { window in
+            window.canBecomeMain && (window.contentViewController != nil || window.isVisible)
+        }
+        let primaryCandidates = appWindows.filter { window in
+            guard let fallback else { return true }
+            return window !== fallback
+        }
+        // Keep fallback as last resort only; otherwise it can create a duplicate visible main window.
+        let candidates: [NSWindow]
+        if primaryCandidates.isEmpty {
+            candidates = fallback.map { [ $0 ] } ?? []
+        } else {
+            candidates = primaryCandidates
+        }
+        logToDownloads("revealExistingWindow: primary=\(primaryCandidates.count), fallbackIncluded=\(primaryCandidates.isEmpty && fallback != nil)")
+        for target in candidates {
+            normalizeMainWindowFrameIfNeeded(target)
             if target.isMiniaturized {
                 target.deminiaturize(nil)
             }
@@ -216,8 +236,10 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentFallbackMainWindow() {
+        prepareFallbackMainWindowControllerIfNeeded()
         if let window = fallbackMainWindowController?.window {
             logToDownloads("presentFallbackMainWindow: reuse existing fallback window")
+            normalizeMainWindowFrameIfNeeded(window)
             if window.isMiniaturized {
                 window.deminiaturize(nil)
             }
@@ -226,36 +248,52 @@ final class LumiShotAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let controller = makeFallbackMainWindowController()
-        fallbackMainWindowController = controller
-        guard let window = controller.window else { return }
-        controller.showWindow(nil)
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        logToDownloads("presentFallbackMainWindow: created new fallback window")
+        logToDownloads("presentFallbackMainWindow: fallback controller unavailable unexpectedly")
     }
 
     private func ensureCaptureSupportWindowWithoutActivation() {
-        if NSApp.windows.contains(where: { $0.canBecomeMain && $0.contentViewController != nil }) {
-            return
-        }
-        if fallbackMainWindowController == nil {
-            fallbackMainWindowController = makeFallbackMainWindowController()
-            logToDownloads("ensureCaptureSupportWindowWithoutActivation: created hidden fallback window")
-        }
+        prepareFallbackMainWindowControllerIfNeeded()
         // Keep listener view alive, but do not steal focus from foreground app.
         fallbackMainWindowController?.window?.orderOut(nil)
     }
 
+    private func prepareFallbackMainWindowControllerIfNeeded() {
+        if fallbackMainWindowController == nil {
+            fallbackMainWindowController = makeFallbackMainWindowController()
+            logToDownloads("prepareFallbackMainWindowControllerIfNeeded: created fallback controller")
+        }
+        _ = fallbackMainWindowController?.window
+        if let window = fallbackMainWindowController?.window {
+            normalizeMainWindowFrameIfNeeded(window)
+        }
+    }
+
+    private func normalizeMainWindowFrameIfNeeded(_ window: NSWindow) {
+        let frame = window.frame
+        let tooSmall = frame.width < Self.minimumMainWindowSize.width || frame.height < Self.minimumMainWindowSize.height
+        guard tooSmall else { return }
+        logToDownloads("normalizeMainWindowFrameIfNeeded: fixing abnormal frame=\(frame)")
+        let targetSize = Self.defaultMainWindowSize
+        if let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            let x = screenFrame.midX - targetSize.width / 2
+            let y = screenFrame.midY - targetSize.height / 2
+            window.setFrame(NSRect(x: x, y: y, width: targetSize.width, height: targetSize.height), display: false)
+        } else {
+            window.setContentSize(targetSize)
+        }
+    }
+
     private func makeFallbackMainWindowController() -> NSWindowController {
         let window = NSWindow(
-            contentRect: NSRect(x: 140, y: 120, width: 1180, height: 760),
+            contentRect: NSRect(origin: NSPoint(x: 140, y: 120), size: Self.defaultMainWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "LumiShot"
         window.isReleasedWhenClosed = false
+        window.setContentSize(Self.defaultMainWindowSize)
+        window.minSize = Self.minimumMainWindowSize
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.contentViewController = NSHostingController(rootView: MainWindowView())

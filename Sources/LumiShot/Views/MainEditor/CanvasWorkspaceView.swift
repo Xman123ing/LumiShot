@@ -179,6 +179,7 @@ struct CanvasWorkspaceView: View {
                     placeholderOverlay
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contentShape(Rectangle())
             .simultaneousGesture(drawingGesture(in: geometry.size))
             .contextMenu {
@@ -421,17 +422,33 @@ struct CanvasWorkspaceView: View {
 
     private func displayImageRect(image: CGImage, in size: CGSize) -> CGRect {
         let contentRect = CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12)
+        let logicalImageSize = displayImageSize(image: image)
+        let backdropPadding = backdropEnabled ? max(0, CGFloat(backdropInset) * 2) : 0
+        let layoutContentSize = CGSize(
+            width: logicalImageSize.width + backdropPadding,
+            height: logicalImageSize.height + backdropPadding
+        )
         let baseRect = aspectFitRect(
-            contentSize: displayImageSize(image: image),
+            contentSize: layoutContentSize,
             in: contentRect
         )
         let zoom = max(0.25, min(3.0, zoomScale))
         let zoomedSize = CGSize(width: baseRect.width * zoom, height: baseRect.height * zoom)
+        guard layoutContentSize.width > 0, layoutContentSize.height > 0 else {
+            return CGRect(
+                x: contentRect.midX - zoomedSize.width / 2,
+                y: contentRect.midY - zoomedSize.height / 2,
+                width: zoomedSize.width,
+                height: zoomedSize.height
+            )
+        }
+        let imageWidth = zoomedSize.width * (logicalImageSize.width / layoutContentSize.width)
+        let imageHeight = zoomedSize.height * (logicalImageSize.height / layoutContentSize.height)
         return CGRect(
-            x: contentRect.midX - zoomedSize.width / 2,
-            y: contentRect.midY - zoomedSize.height / 2,
-            width: zoomedSize.width,
-            height: zoomedSize.height
+            x: contentRect.midX - imageWidth / 2,
+            y: contentRect.midY - imageHeight / 2,
+            width: imageWidth,
+            height: imageHeight
         )
     }
 

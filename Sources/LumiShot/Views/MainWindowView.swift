@@ -1,10 +1,26 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private enum CaptureSessionGate {
+    private static var inProgress = false
+
+    static func begin() -> Bool {
+        guard inProgress == false else { return false }
+        inProgress = true
+        return true
+    }
+
+    static func end() {
+        inProgress = false
+    }
+}
+
 public struct MainWindowView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var viewModel = MainWorkflowViewModel.live()
     @StateObject private var toolStyleStore = AnnotationToolStyleStore()
+    @AppStorage("annotation.backdrop.enabled") private var backdropEnabled = false
     @State private var toastMessage: String?
     @State private var toastDismissToken = 0
     @State private var captureRegionSelector = InteractiveCaptureRegionSelector()
@@ -12,7 +28,6 @@ public struct MainWindowView: View {
     @State private var zoomScale: Double = 1.0
     @State private var textEditingState: TextInlineEditingState?
     @State private var counterEditingState: CounterInlineEditingState?
-    @State private var backdropEnabled = false
     @State private var annotationUndoStack: [[AnnotationItem]] = []
     @State private var movingAnnotationIDs: Set<UUID> = []
     @State private var paletteTool: AnnotationColorTool?
@@ -333,6 +348,10 @@ public struct MainWindowView: View {
     }
 
     private func triggerCapture() {
+        guard CaptureSessionGate.begin() else {
+            showToast("Capture is already in progress.")
+            return
+        }
         commitPendingTextEditingIfNeeded()
         commitPendingCounterEditingIfNeeded()
         captureRegionSelector.beginSelection(
@@ -341,8 +360,9 @@ public struct MainWindowView: View {
         ) { selectionRect in
             NSCursor.arrow.set()
             guard let selectionRect else {
-                self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
+                self.captureRegionSelector.restoreWindowsIfNeeded()
                 NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
+                CaptureSessionGate.end()
                 self.showToast("Capture cancelled.")
                 return
             }
@@ -356,12 +376,14 @@ public struct MainWindowView: View {
                     self.counterEditingState = nil
                     self.annotationUndoStack = []
                     self.hoveredAnnotationID = nil
-                    self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
+                    self.captureRegionSelector.restoreWindowsIfNeeded()
                     NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
+                    CaptureSessionGate.end()
                     self.showToast("Capture completed.")
                 } catch {
-                    self.captureRegionSelector.restoreWindowsAndBringLumiShotFront()
+                    self.captureRegionSelector.restoreWindowsIfNeeded()
                     NotificationCenter.default.post(name: LumiShotNotifications.requestOpenMainWindow, object: nil)
+                    CaptureSessionGate.end()
                     self.showToast("Capture failed: \(captureErrorMessage(error))")
                 }
             }
